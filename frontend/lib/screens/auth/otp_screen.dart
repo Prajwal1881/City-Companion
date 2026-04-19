@@ -22,10 +22,10 @@ class _OtpScreenState extends State<OtpScreen> {
       await ApiClient.verifyOtp(widget.phone, _ctrl.text);
       final user = await ApiClient.getMe();
       if (mounted) {
-        if (user['name'] == 'New User' || user['name'] == null) {
-          context.go('/auth/setup');
-        } else {
+        if (user['is_profile_complete'] == true) {
           context.go('/feed');
+        } else {
+          context.go('/auth/setup');
         }
       }
     } catch (e) {

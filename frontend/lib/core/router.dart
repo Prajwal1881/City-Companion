@@ -15,8 +15,11 @@ import '../screens/profile/profile_screen.dart';
 import '../screens/splash_screen.dart';
 import '../screens/feed/plan_details_screen.dart';
 
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     routes: [
       GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),

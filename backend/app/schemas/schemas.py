@@ -43,6 +43,7 @@ class UserOut(UserBase):
     trust_score: float
     is_phone_verified: bool
     is_id_verified: bool
+    is_profile_complete: bool
     created_at: datetime
     class Config:
         from_attributes = True
@@ -57,6 +58,7 @@ class UserNearby(BaseModel):
     profile_photo: Optional[str]
     trust_score: float
     is_phone_verified: bool
+    is_profile_complete: bool
     distance_km: Optional[float]
     online: bool = False
     class Config:

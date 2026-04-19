@@ -34,6 +34,7 @@ class User(Base):
     trust_score      = Column(Float, default=0.0)
     is_phone_verified = Column(Boolean, default=False)
     is_id_verified   = Column(Boolean, default=False)
+    is_profile_complete = Column(Boolean, default=False)
     firebase_uid     = Column(String(128), unique=True, nullable=True)
     created_at       = Column(DateTime, default=datetime.utcnow)
     updated_at       = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

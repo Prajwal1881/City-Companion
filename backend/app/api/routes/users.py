@@ -26,6 +26,7 @@ def update_me(data: UserUpdate, db: Session = Depends(get_db),
               current_user: User = Depends(get_current_user)):
     for field, value in data.dict(exclude_unset=True).items():
         setattr(current_user, field, value)
+    current_user.is_profile_complete = True
     db.commit()
     db.refresh(current_user)
     return current_user

@@ -1,7 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:go_router/go_router.dart';
 
-const _baseUrl = 'http://192.168.1.50:8000/v1';
+import '../core/router.dart';
+
+const _baseUrl = 'http://localhost:8000/v1';
 const _storage = FlutterSecureStorage();
 
 class ApiClient {
@@ -20,9 +23,13 @@ class ApiClient {
         }
         return handler.next(options);
       },
-      onError: (error, handler) {
+      onError: (error, handler) async {
         if (error.response?.statusCode == 401) {
-          // TODO: redirect to login
+          await logout();
+          final context = rootNavigatorKey.currentContext;
+          if (context != null) {
+            GoRouter.of(context).go('/auth/phone');
+          }
         }
         return handler.next(error);
       },

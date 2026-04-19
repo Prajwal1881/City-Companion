@@ -23,7 +23,21 @@ class _SplashScreenState extends State<SplashScreen> {
     final loggedIn = await ApiClient.isLoggedIn();
     if (mounted) {
       if (loggedIn) {
-        context.go('/feed');
+        try {
+          final user = await ApiClient.getMe();
+          if (mounted) {
+            if (user['is_profile_complete'] == true) {
+              context.go('/feed');
+            } else {
+              await ApiClient.logout();
+              if (mounted) context.go('/auth/phone');
+            }
+          }
+        } catch (_) {
+          // If profile fetch fails (e.g. 401), ApiClient will handle it
+          // But as a fallback, go to login
+          if (mounted) context.go('/auth/phone');
+        }
       } else {
         context.go('/auth/phone');
       }
