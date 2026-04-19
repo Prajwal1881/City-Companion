@@ -3,9 +3,10 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from math import radians, cos, sin, asin, sqrt
 from app.db.database import get_db
-from app.schemas.schemas import UserOut, UserUpdate, UserNearby
+from app.schemas.schemas import DeviceTokenIn, UserOut, UserUpdate, UserNearby
 from app.models.user import User
 from app.core.security import get_current_user
+from app.core.push_notifications import register_device_token, unregister_device_token
 
 router = APIRouter()
 
@@ -30,6 +31,30 @@ def update_me(data: UserUpdate, db: Session = Depends(get_db),
     db.commit()
     db.refresh(current_user)
     return current_user
+
+
+@router.post("/me/device-token")
+def save_device_token(
+    data: DeviceTokenIn,
+    current_user: User = Depends(get_current_user),
+):
+    token = data.token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Device token is required")
+    register_device_token(str(current_user.id), token)
+    return {"message": "Device token saved"}
+
+
+@router.delete("/me/device-token")
+def remove_device_token(
+    data: DeviceTokenIn,
+    current_user: User = Depends(get_current_user),
+):
+    token = data.token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Device token is required")
+    unregister_device_token(str(current_user.id), token)
+    return {"message": "Device token removed"}
 
 @router.get("/{user_id}", response_model=UserOut)
 def get_user(user_id: str, db: Session = Depends(get_db),

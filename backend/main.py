@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.routes import auth, users, plans, rooms, communities, events, chat
+from app.api.routes import auth, users, plans, rooms, communities, events, chat, notifications
 from app.core.config import settings
 from app.db.database import engine
 from app.models import base
@@ -28,6 +28,7 @@ app.include_router(rooms.router,       prefix="/v1/rooms",       tags=["Rooms"])
 app.include_router(communities.router, prefix="/v1/communities", tags=["Communities"])
 app.include_router(events.router,      prefix="/v1/events",      tags=["Events"])
 app.include_router(chat.router,        prefix="/v1/chat",        tags=["Chat"])
+app.include_router(notifications.router, prefix="/v1/notifications", tags=["Notifications"])
 
 @app.get("/")
 def root():

@@ -1,5 +1,6 @@
 from app.models.user import User
 from app.models.plan import Plan
+from app.models.notification import Notification
 from app.models.other import Room, Community, CommunityMember, Conversation, ConversationMember, Message
 
 class base:

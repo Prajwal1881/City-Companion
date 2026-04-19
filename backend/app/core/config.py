@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: Optional[str] = None
     CLOUDINARY_API_KEY: Optional[str] = None
     CLOUDINARY_API_SECRET: Optional[str] = None
+    GOOGLE_PLACES_API_KEY: Optional[str] = None
 
     class Config:
         env_file = ".env"

@@ -37,6 +37,10 @@ class UserCreate(UserBase):
 class UserUpdate(UserBase):
     pass
 
+
+class DeviceTokenIn(BaseModel):
+    token: str
+
 class UserOut(UserBase):
     id: UUID
     profile_photo: Optional[str]
@@ -99,9 +103,16 @@ class PlanOut(BaseModel):
     created_at: datetime
     has_joined: bool = False
     is_host: bool = False
+    conversation_id: Optional[UUID] = None
     members: List[PlanMemberOut] = []
     class Config:
         from_attributes = True
+
+class LocationAutocompleteSuggestion(BaseModel):
+    place_id: str
+    description: str
+    lat: float
+    lng: float
 
 # ── ROOM ──────────────────────────────────────────────────────────────────
 
@@ -166,5 +177,20 @@ class ConversationOut(BaseModel):
     name: Optional[str]
     last_message: Optional[str]
     unread_count: int = 0
+    can_delete: bool = False
+    class Config:
+        from_attributes = True
+
+
+# ── NOTIFICATIONS ───────────────────────────────────────────────────────────
+
+class NotificationOut(BaseModel):
+    id: UUID
+    title: str
+    body: str
+    type: str
+    is_read: bool
+    created_at: datetime
+
     class Config:
         from_attributes = True

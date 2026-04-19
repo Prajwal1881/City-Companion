@@ -4,6 +4,7 @@ from typing import List, Optional
 from app.db.database import get_db
 from app.schemas.schemas import RoomCreate, RoomOut, CommunityCreate, CommunityOut, MessageCreate, MessageOut, ConversationOut
 from app.models.other import Room, Community, CommunityMember, Conversation, ConversationMember, Message
+from app.models.plan import Plan
 from app.models.user import User
 from app.core.security import get_current_user, verify_token
 import json
@@ -159,9 +160,48 @@ def get_conversations(db: Session = Depends(get_db), current_user: User = Depend
     for m in memberships:
         conv = db.query(Conversation).filter(Conversation.id == m.conversation_id).first()
         if conv:
+            conv_name = conv.name
+            can_delete = False
+            if (not conv_name) and conv.type == "plan" and conv.reference_id:
+                plan = db.query(Plan).filter(Plan.id == conv.reference_id).first()
+                if plan and plan.title:
+                    conv_name = plan.title
+            if conv.type == "plan" and conv.reference_id:
+                plan = db.query(Plan).filter(Plan.id == conv.reference_id).first()
+                can_delete = bool(plan and plan.host_id == current_user.id)
             last_msg = db.query(Message).filter_by(conversation_id=conv.id).order_by(Message.sent_at.desc()).first()
-            result.append({**conv.__dict__, "last_message": last_msg.content if last_msg else None, "unread_count": 0})
+            result.append({
+                **conv.__dict__,
+                "name": conv_name or "Plan Chat",
+                "last_message": last_msg.content if last_msg else None,
+                "unread_count": 0,
+                "can_delete": can_delete,
+            })
     return result
+
+
+@router_chat.delete("/conversations/{conv_id}")
+def delete_conversation(
+    conv_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    conv = db.query(Conversation).filter(Conversation.id == conv_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    if conv.type != "plan" or not conv.reference_id:
+        raise HTTPException(status_code=403, detail="Only hosted plan threads can be deleted")
+
+    plan = db.query(Plan).filter(Plan.id == conv.reference_id).first()
+    if not plan or plan.host_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only host can delete this plan thread")
+
+    db.query(Message).filter(Message.conversation_id == conv.id).delete(synchronize_session=False)
+    db.query(ConversationMember).filter(ConversationMember.conversation_id == conv.id).delete(synchronize_session=False)
+    db.delete(conv)
+    db.commit()
+    return {"message": "Plan chat thread deleted"}
 
 @router_chat.get("/conversations/{conv_id}/messages", response_model=List[MessageOut])
 def get_messages(conv_id: str, db: Session = Depends(get_db),
