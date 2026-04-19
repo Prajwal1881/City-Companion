@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/api_client.dart';
+import '../../services/push_notification_service.dart';
 import '../../core/theme.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class _SplashScreenState extends State<SplashScreen> {
       if (loggedIn) {
         try {
           final user = await ApiClient.getMe();
+          await PushNotificationService.registerForCurrentUser();
           if (mounted) {
             if (user['is_profile_complete'] == true) {
               context.go('/feed');

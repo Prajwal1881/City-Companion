@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "625031760322",
+    "project_id": "city-companion-ef036",
+    "storage_bucket": "city-companion-ef036.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:625031760322:android:fffd790c26278e59f72e5b",
+        "android_client_info": {
+          "package_name": "com.example.city_companion"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyChldzbM1QAhLL-ETCz7ziLA0zEi0wVDtI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

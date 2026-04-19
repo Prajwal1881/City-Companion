@@ -73,6 +73,14 @@ class ApiClient {
     return res.data;
   }
 
+  static Future<void> registerDeviceToken(String token) async {
+    await _dio.post('/users/me/device-token', data: {'token': token});
+  }
+
+  static Future<void> unregisterDeviceToken(String token) async {
+    await _dio.delete('/users/me/device-token', data: {'token': token});
+  }
+
   static Future<List<dynamic>> getNearby(
       {required double lat, required double lng, double radiusKm = 10}) async {
     final res = await _dio.get('/users/nearby',
@@ -99,6 +107,15 @@ class ApiClient {
     return res.data;
   }
 
+  static Future<List<Map<String, dynamic>>> locationAutocomplete(
+      String query) async {
+    final res = await _dio
+        .get('/plans/location/autocomplete', queryParameters: {'query': query});
+    return (res.data as List<dynamic>)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
   static Future<void> joinPlan(String planId) async {
     await _dio.post('/plans/$planId/join');
   }
@@ -109,6 +126,28 @@ class ApiClient {
 
   static Future<void> deletePlan(String planId) async {
     await _dio.delete('/plans/$planId');
+  }
+
+  // ── Notifications ─────────────────────────────────────────────────────
+
+  static Future<List<Map<String, dynamic>>> getNotifications() async {
+    final res = await _dio.get('/notifications/');
+    return (res.data as List<dynamic>)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  static Future<int> getUnseenNotificationCount() async {
+    final res = await _dio.get('/notifications/unseen-count');
+    return (res.data['count'] as num?)?.toInt() ?? 0;
+  }
+
+  static Future<void> markAllNotificationsRead() async {
+    await _dio.post('/notifications/read-all');
+  }
+
+  static Future<void> deleteNotification(String notificationId) async {
+    await _dio.delete('/notifications/$notificationId');
   }
 
   // ── Rooms ─────────────────────────────────────────────────────────────
@@ -153,5 +192,9 @@ class ApiClient {
   static Future<List<dynamic>> getMessages(String convId) async {
     final res = await _dio.get('/chat/conversations/$convId/messages');
     return res.data;
+  }
+
+  static Future<void> deleteConversation(String convId) async {
+    await _dio.delete('/chat/conversations/$convId');
   }
 }
