@@ -1,0 +1,61 @@
+name: city_companion
+description: Connect with people in your city — plans, roommates, communities.
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.3
+
+  # Navigation
+  go_router: ^13.2.0
+
+  # Networking
+  dio: ^5.4.1
+  retrofit: ^4.1.0
+
+  # Local storage & auth
+  flutter_secure_storage: ^9.0.0
+  shared_preferences: ^2.2.2
+  firebase_core: ^2.27.0
+  firebase_auth: ^4.17.5
+  firebase_messaging: ^14.7.19
+
+  # Maps
+  google_maps_flutter: ^2.6.0
+
+  # Media
+  image_picker: ^1.0.7
+  cached_network_image: ^3.3.1
+
+  # WebSocket
+  web_socket_channel: ^2.4.0
+
+  # UI helpers
+  intl: ^0.19.0
+  timeago: ^3.6.1
+  shimmer: ^3.0.0
+  lottie: ^3.1.0
+  google_fonts: ^6.2.1
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.8
+  riverpod_generator: ^2.3.9
+  retrofit_generator: ^8.1.0
+  json_serializable: ^6.7.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/animations/

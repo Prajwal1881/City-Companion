@@ -1,0 +1,48 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import '../core/theme.dart';
+
+class ShellScreen extends StatelessWidget {
+  final Widget child;
+  const ShellScreen({super.key, required this.child});
+
+  static const _tabs = [
+    _Tab('/feed',        Icons.home_rounded,         'Feed'),
+    _Tab('/discover',    Icons.explore_rounded,       'People'),
+    _Tab('/rooms',       Icons.apartment_rounded,     'Rooms'),
+    _Tab('/communities', Icons.groups_rounded,        'Groups'),
+    _Tab('/chat',        Icons.chat_bubble_rounded,   'Chat'),
+    _Tab('/profile',     Icons.person_rounded,        'Me'),
+  ];
+
+  int _currentIndex(BuildContext context) {
+    final location = GoRouterState.of(context).uri.toString();
+    for (var i = 0; i < _tabs.length; i++) {
+      if (location.startsWith(_tabs[i].path)) return i;
+    }
+    return 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final idx = _currentIndex(context);
+    return Scaffold(
+      body: child,
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: idx,
+        onTap: (i) => context.go(_tabs[i].path),
+        items: _tabs.map((t) => BottomNavigationBarItem(
+          icon: Icon(t.icon),
+          label: t.label,
+        )).toList(),
+      ),
+    );
+  }
+}
+
+class _Tab {
+  final String path;
+  final IconData icon;
+  final String label;
+  const _Tab(this.path, this.icon, this.label);
+}
