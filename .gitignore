@@ -43,3 +43,16 @@ frontend/.packages
 
 # AI tool configs (optional - keep if needed)
 .code-review-graph/
+
+# AI Tool Configs
+.claude/
+.cursor/
+.kiro/
+.venv/
+.cursorrules
+.windsurfrules
+.mcp.json
+.opencode.json
+AGENTS.md
+CLAUDE.md
+GEMINI.md
