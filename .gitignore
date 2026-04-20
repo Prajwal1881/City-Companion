@@ -1,2 +1,45 @@
-# Added by code-review-graph
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+venv/
+.venv/
+env/
+ENV/
+
+# Secrets & Environment
+.env
+.env.*
+!.env.example
+
+# Firebase & Service Account JSON
+*firebase-adminsdk*.json
+*service-account*.json
+*serviceAccountKey*.json
+*.json
+!package.json
+!pubspec.yaml
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Flutter
+frontend/.dart_tool/
+frontend/build/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+frontend/.packages
+
+# AI tool configs (optional - keep if needed)
 .code-review-graph/
