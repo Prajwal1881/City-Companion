@@ -4,26 +4,36 @@ import logging
 import os
 from typing import Iterable, List
 
-import firebase_admin
-from firebase_admin import credentials, messaging
-import redis
-
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-r = redis.from_url(settings.REDIS_URL, decode_responses=True)
+
+# ── Optional Firebase setup ──────────────────────────────────────────────────
+try:
+    import firebase_admin
+    from firebase_admin import credentials, messaging
+    _FIREBASE_AVAILABLE = True
+except ImportError:
+    _FIREBASE_AVAILABLE = False
+
+# ── Optional Redis setup (for FCM token storage) ─────────────────────────────
+_redis_client = None
+if settings.REDIS_URL:
+    try:
+        import redis as redis_lib
+        _redis_client = redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
+    except Exception as e:
+        logger.warning("Redis not available for push notifications: %s", e)
 
 
 def _get_firebase_app():
+    if not _FIREBASE_AVAILABLE:
+        raise RuntimeError("firebase-admin package not available")
     if firebase_admin._apps:
         return firebase_admin.get_app()
-
     credentials_path = settings.FIREBASE_CREDENTIALS_PATH
-    if not credentials_path:
-        raise RuntimeError("FIREBASE_CREDENTIALS_PATH is not configured")
-    if not os.path.exists(credentials_path):
-        raise RuntimeError("Firebase credentials file not found")
-
+    if not credentials_path or not os.path.exists(credentials_path):
+        raise RuntimeError("Firebase credentials file not found or not configured")
     cred = credentials.Certificate(credentials_path)
     return firebase_admin.initialize_app(cred)
 
@@ -33,19 +43,21 @@ def _token_key(user_id: str) -> str:
 
 
 def register_device_token(user_id: str, token: str) -> None:
-    if token:
-        r.sadd(_token_key(user_id), token)
+    if token and _redis_client:
+        _redis_client.sadd(_token_key(user_id), token)
 
 
 def unregister_device_token(user_id: str, token: str) -> None:
-    if token:
-        r.srem(_token_key(user_id), token)
+    if token and _redis_client:
+        _redis_client.srem(_token_key(user_id), token)
 
 
 def _load_tokens_for_users(user_ids: Iterable[str]) -> List[str]:
+    if not _redis_client:
+        return []
     tokens: set[str] = set()
     for user_id in user_ids:
-        tokens.update(r.smembers(_token_key(user_id)))
+        tokens.update(_redis_client.smembers(_token_key(user_id)))
     return list(tokens)
 
 
@@ -54,18 +66,20 @@ def send_plan_cancelled_notification(
     host_name: str,
     plan_title: str,
 ) -> int:
+    """Send push notification for plan cancellation. No-op if Firebase/Redis not configured."""
     user_ids = list(recipient_user_ids)
     if not user_ids:
         return 0
 
     tokens = _load_tokens_for_users(user_ids)
     if not tokens:
+        logger.info("No FCM tokens found — skipping push notification")
         return 0
 
     try:
         _get_firebase_app()
     except Exception as exc:
-        logger.warning("Skipping push notification setup: %s", exc)
+        logger.warning("Skipping push notification: %s", exc)
         return 0
 
     sent_count = 0
@@ -86,16 +100,13 @@ def send_plan_cancelled_notification(
         try:
             response = messaging.send_each_for_multicast(message)
             sent_count += response.success_count
-            if response.failure_count:
-                invalid_tokens: List[str] = []
+            if response.failure_count and _redis_client:
                 for idx, result in enumerate(response.responses):
                     if not result.success:
                         exc = result.exception
                         if exc and "registration-token-not-registered" in str(exc):
-                            invalid_tokens.append(chunk[idx])
-                for token in invalid_tokens:
-                    for user_id in user_ids:
-                        r.srem(_token_key(user_id), token)
+                            for user_id in user_ids:
+                                _redis_client.srem(_token_key(user_id), chunk[idx])
         except Exception as exc:
             logger.warning("Push send failed for plan cancel: %s", exc)
 
