@@ -1,10 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../core/theme.dart';
+import '../services/push_notification_service.dart';
 
-class ShellScreen extends StatelessWidget {
+class ShellScreen extends StatefulWidget {
   final Widget child;
   const ShellScreen({super.key, required this.child});
+
+  @override
+  State<ShellScreen> createState() => _ShellScreenState();
+}
+
+class _ShellScreenState extends State<ShellScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // Register FCM token with backend once the user is logged in
+    // and the main shell is mounted
+    PushNotificationService.registerForCurrentUser();
+  }
 
   static const _tabs = [
     _Tab('/feed',        Icons.home_rounded,         'Feed'),
@@ -27,7 +41,7 @@ class ShellScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final idx = _currentIndex(context);
     return Scaffold(
-      body: child,
+      body: widget.child,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: idx,
         onTap: (i) => context.go(_tabs[i].path),
