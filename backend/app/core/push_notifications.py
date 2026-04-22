@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Iterable, List
 
-from app.core.config import settings
+from app.core.config import settings, get_firebase_credentials_dict
 
 logger = logging.getLogger(__name__)
 
@@ -28,13 +27,16 @@ if settings.REDIS_URL:
 
 def _get_firebase_app():
     if not _FIREBASE_AVAILABLE:
-        raise RuntimeError("firebase-admin package not available")
+        raise RuntimeError("firebase-admin package not installed")
+
     if firebase_admin._apps:
         return firebase_admin.get_app()
-    credentials_path = settings.FIREBASE_CREDENTIALS_PATH
-    if not credentials_path or not os.path.exists(credentials_path):
-        raise RuntimeError("Firebase credentials file not found or not configured")
-    cred = credentials.Certificate(credentials_path)
+
+    creds_dict = get_firebase_credentials_dict()
+    if not creds_dict:
+        raise RuntimeError("Firebase credentials not configured (set FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, etc.)")
+
+    cred = credentials.Certificate(creds_dict)
     return firebase_admin.initialize_app(cred)
 
 
@@ -66,7 +68,7 @@ def send_plan_cancelled_notification(
     host_name: str,
     plan_title: str,
 ) -> int:
-    """Send push notification for plan cancellation. No-op if Firebase/Redis not configured."""
+    """Send push notification for plan cancellation. No-op if Firebase not configured."""
     user_ids = list(recipient_user_ids)
     if not user_ids:
         return 0
