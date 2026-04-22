@@ -36,24 +36,26 @@ def update_me(data: UserUpdate, db: Session = Depends(get_db),
 @router.post("/me/device-token")
 def save_device_token(
     data: DeviceTokenIn,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     token = data.token.strip()
     if not token:
         raise HTTPException(status_code=400, detail="Device token is required")
-    register_device_token(str(current_user.id), token)
+    register_device_token(str(current_user.id), token, db)
     return {"message": "Device token saved"}
 
 
 @router.delete("/me/device-token")
 def remove_device_token(
     data: DeviceTokenIn,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     token = data.token.strip()
     if not token:
         raise HTTPException(status_code=400, detail="Device token is required")
-    unregister_device_token(str(current_user.id), token)
+    unregister_device_token(str(current_user.id), token, db)
     return {"message": "Device token removed"}
 
 
@@ -99,5 +101,4 @@ def connect(user_id: str, db: Session = Depends(get_db),
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    # TODO: create connection request record
     return {"message": f"Connection request sent to {target.name}"}

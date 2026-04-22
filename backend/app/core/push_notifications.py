@@ -15,15 +15,6 @@ try:
 except ImportError:
     _FIREBASE_AVAILABLE = False
 
-# ── Optional Redis setup (for FCM token storage) ─────────────────────────────
-_redis_client = None
-if settings.REDIS_URL:
-    try:
-        import redis as redis_lib
-        _redis_client = redis_lib.from_url(settings.REDIS_URL, decode_responses=True)
-    except Exception as e:
-        logger.warning("Redis not available for push notifications: %s", e)
-
 
 def _get_firebase_app():
     if not _FIREBASE_AVAILABLE:
@@ -34,48 +25,67 @@ def _get_firebase_app():
 
     creds_dict = get_firebase_credentials_dict()
     if not creds_dict:
-        raise RuntimeError("Firebase credentials not configured (set FIREBASE_PROJECT_ID, FIREBASE_PRIVATE_KEY, etc.)")
+        raise RuntimeError("Firebase credentials not configured")
 
     cred = credentials.Certificate(creds_dict)
     return firebase_admin.initialize_app(cred)
 
 
-def _token_key(user_id: str) -> str:
-    return f"user:{user_id}:fcm_tokens"
+# ── Token management (Postgres-backed) ───────────────────────────────────────
+
+def register_device_token(user_id: str, token: str, db) -> None:
+    """Upsert an FCM token for a user into Postgres."""
+    from app.models.user import UserFCMToken
+    existing = db.query(UserFCMToken).filter(UserFCMToken.token == token).first()
+    if not existing:
+        db.add(UserFCMToken(user_id=user_id, token=token))
+        db.commit()
+        logger.info("FCM token registered for user %s", user_id)
 
 
-def register_device_token(user_id: str, token: str) -> None:
-    if token and _redis_client:
-        _redis_client.sadd(_token_key(user_id), token)
+def unregister_device_token(user_id: str, token: str, db) -> None:
+    """Remove an FCM token from Postgres."""
+    from app.models.user import UserFCMToken
+    db.query(UserFCMToken).filter(
+        UserFCMToken.user_id == user_id,
+        UserFCMToken.token == token,
+    ).delete(synchronize_session=False)
+    db.commit()
 
 
-def unregister_device_token(user_id: str, token: str) -> None:
-    if token and _redis_client:
-        _redis_client.srem(_token_key(user_id), token)
-
-
-def _load_tokens_for_users(user_ids: Iterable[str]) -> List[str]:
-    if not _redis_client:
+def _load_tokens_for_users(user_ids: Iterable[str], db) -> List[str]:
+    """Fetch all FCM tokens for a list of user IDs from Postgres."""
+    from app.models.user import UserFCMToken
+    ids = list(user_ids)
+    if not ids:
         return []
-    tokens: set[str] = set()
-    for user_id in user_ids:
-        tokens.update(_redis_client.smembers(_token_key(user_id)))
-    return list(tokens)
+    rows = db.query(UserFCMToken.token).filter(UserFCMToken.user_id.in_(ids)).all()
+    return [r.token for r in rows]
 
+
+def _remove_stale_token(token: str, db) -> None:
+    """Remove an invalid/unregistered FCM token from Postgres."""
+    from app.models.user import UserFCMToken
+    db.query(UserFCMToken).filter(UserFCMToken.token == token).delete(synchronize_session=False)
+    db.commit()
+
+
+# ── Notification senders ─────────────────────────────────────────────────────
 
 def send_plan_cancelled_notification(
     recipient_user_ids: Iterable[str],
     host_name: str,
     plan_title: str,
+    db=None,
 ) -> int:
-    """Send push notification for plan cancellation. No-op if Firebase not configured."""
+    """Send push notification for plan cancellation."""
     user_ids = list(recipient_user_ids)
-    if not user_ids:
+    if not user_ids or db is None:
         return 0
 
-    tokens = _load_tokens_for_users(user_ids)
+    tokens = _load_tokens_for_users(user_ids, db)
     if not tokens:
-        logger.info("No FCM tokens found — skipping push notification")
+        logger.info("No FCM tokens found for users — skipping push notification")
         return 0
 
     try:
@@ -86,7 +96,7 @@ def send_plan_cancelled_notification(
 
     sent_count = 0
     for i in range(0, len(tokens), 500):
-        chunk = tokens[i : i + 500]
+        chunk = tokens[i: i + 500]
         message = messaging.MulticastMessage(
             notification=messaging.Notification(
                 title="Plan Cancelled",
@@ -102,14 +112,14 @@ def send_plan_cancelled_notification(
         try:
             response = messaging.send_each_for_multicast(message)
             sent_count += response.success_count
-            if response.failure_count and _redis_client:
+            # Clean up stale tokens that are no longer registered
+            if response.failure_count:
                 for idx, result in enumerate(response.responses):
                     if not result.success:
                         exc = result.exception
                         if exc and "registration-token-not-registered" in str(exc):
-                            for user_id in user_ids:
-                                _redis_client.srem(_token_key(user_id), chunk[idx])
+                            _remove_stale_token(chunk[idx], db)
         except Exception as exc:
-            logger.warning("Push send failed for plan cancel: %s", exc)
+            logger.warning("Push send failed: %s", exc)
 
     return sent_count
