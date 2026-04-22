@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
-const _wsBase = 'ws://localhost:8000/v1/chat/ws';
+const _wsBase = 'wss://city-companion.onrender.com/v1/chat/ws';
 const _storage = FlutterSecureStorage();
 
 class ChatService {

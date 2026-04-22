@@ -4,12 +4,25 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'api_client.dart';
 
+// MUST be a top-level function (not inside a class) for background handling to work
+@pragma('vm:entry-point')
+Future<void> firebaseBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  // FCM auto-displays the system notification when the app is in background/killed
+  // as long as the backend sends a 'notification' block in the FCM payload
+}
+
 class PushNotificationService {
   static bool _bootstrapped = false;
 
   static Future<void> bootstrap() async {
     if (_bootstrapped || kIsWeb) return;
     await Firebase.initializeApp();
+
+    // Register background message handler so system notifications appear
+    // when app is backgrounded or killed
+    FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
+
     _bootstrapped = true;
   }
 
