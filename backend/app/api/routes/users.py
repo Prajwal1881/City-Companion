@@ -56,14 +56,9 @@ def remove_device_token(
     unregister_device_token(str(current_user.id), token)
     return {"message": "Device token removed"}
 
-@router.get("/{user_id}", response_model=UserOut)
-def get_user(user_id: str, db: Session = Depends(get_db),
-             _: User = Depends(get_current_user)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
 
+# NOTE: /nearby MUST be defined before /{user_id} to avoid FastAPI
+# matching the literal string "nearby" as a UUID path parameter
 @router.get("/nearby", response_model=List[UserNearby])
 def get_nearby_users(
     lat: float = Query(..., description="Your latitude"),
@@ -87,6 +82,16 @@ def get_nearby_users(
 
     nearby.sort(key=lambda x: x["distance_km"])
     return nearby[:50]
+
+
+@router.get("/{user_id}", response_model=UserOut)
+def get_user(user_id: str, db: Session = Depends(get_db),
+             _: User = Depends(get_current_user)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
 
 @router.post("/{user_id}/connect")
 def connect(user_id: str, db: Session = Depends(get_db),
