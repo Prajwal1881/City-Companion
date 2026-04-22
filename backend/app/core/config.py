@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
     DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/city_companion"
-    REDIS_URL: str = "redis://localhost:6379"
+    REDIS_URL: Optional[str] = None  # Not required — Redis removed for now
 
     FIREBASE_CREDENTIALS_PATH: Optional[str] = None
 
