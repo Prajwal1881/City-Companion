@@ -15,11 +15,42 @@ base.Base.metadata.create_all(bind=engine)
 def _run_startup_migrations():
     with engine.connect() as conn:
         migrations = [
-            # conversations.updated_at added in chat feature
+            # Add missing columns
             "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at BIGINT",
-            # user_fcm_tokens table — created by create_all, but friendships may be missing
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(128) UNIQUE",
-            # friendships table may be missing on older DBs
+            # Convert conversations.created_at from TIMESTAMP to BIGINT (only if still timestamp)
+            """
+            DO $$ BEGIN
+              IF (SELECT data_type FROM information_schema.columns
+                  WHERE table_name='conversations' AND column_name='created_at') = 'timestamp without time zone'
+              THEN
+                ALTER TABLE conversations ALTER COLUMN created_at TYPE BIGINT
+                  USING EXTRACT(EPOCH FROM created_at)::BIGINT * 1000;
+              END IF;
+            END $$;
+            """,
+            # Convert conversations.updated_at from TIMESTAMP to BIGINT (only if still timestamp)
+            """
+            DO $$ BEGIN
+              IF (SELECT data_type FROM information_schema.columns
+                  WHERE table_name='conversations' AND column_name='updated_at') = 'timestamp without time zone'
+              THEN
+                ALTER TABLE conversations ALTER COLUMN updated_at TYPE BIGINT
+                  USING EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000;
+              END IF;
+            END $$;
+            """,
+            # Convert messages.sent_at from TIMESTAMP to BIGINT (only if still timestamp)
+            """
+            DO $$ BEGIN
+              IF (SELECT data_type FROM information_schema.columns
+                  WHERE table_name='messages' AND column_name='sent_at') = 'timestamp without time zone'
+              THEN
+                ALTER TABLE messages ALTER COLUMN sent_at TYPE BIGINT
+                  USING EXTRACT(EPOCH FROM sent_at)::BIGINT * 1000;
+              END IF;
+            END $$;
+            """,
         ]
         for sql in migrations:
             try:

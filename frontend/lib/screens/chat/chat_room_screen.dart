@@ -232,12 +232,23 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
 
         if (mounted) {
           setState(() {
-            // Find if we have a pending message matching this content
-            final idx = _messages.indexWhere((m) => m['status_code'] == 0 && m['text'] == msg['content']);
-            if (idx != -1) {
-              _messages[idx] = localMap; // Replace pending
+            // 1. Check if this message ID already exists (deduplication)
+            final existingIdIdx = _messages.indexWhere((m) => m['id']?.toString() == localMap['id']?.toString());
+            if (existingIdIdx != -1) {
+              _messages[existingIdIdx] = localMap;
+              return;
+            }
+
+            // 2. Find if we have a pending message matching this content to replace
+            final pendingIdx = _messages.indexWhere((m) => 
+              m['status_code'] == 0 && 
+              (m['text'] == msg['content'] || m['content'] == msg['content'])
+            );
+
+            if (pendingIdx != -1) {
+              _messages[pendingIdx] = localMap; // Replace pending with official server message
             } else {
-              _messages.insert(0, localMap);
+              _messages.insert(0, localMap); // New message from someone else
             }
           });
         }
