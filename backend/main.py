@@ -5,7 +5,30 @@ from app.core.config import settings
 from app.db.database import engine
 from app.models import base
 
+from sqlalchemy import text
+
 base.Base.metadata.create_all(bind=engine)
+
+# ── Safe startup migrations ──────────────────────────────────────────────────
+# Adds columns that were introduced after the initial DB creation.
+# Uses IF NOT EXISTS so it's safe to run on every startup.
+def _run_startup_migrations():
+    with engine.connect() as conn:
+        migrations = [
+            # conversations.updated_at added in chat feature
+            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at BIGINT",
+            # user_fcm_tokens table — created by create_all, but friendships may be missing
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(128) UNIQUE",
+            # friendships table may be missing on older DBs
+        ]
+        for sql in migrations:
+            try:
+                conn.execute(text(sql))
+            except Exception as e:
+                pass  # Column already exists or table doesn't exist yet
+        conn.commit()
+
+_run_startup_migrations()
 
 app = FastAPI(
     title="City Companion API",
