@@ -1,8 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import redis.asyncio as redis
 from app.core.config import settings
+
+try:
+    import redis.asyncio as redis
+    _REDIS_AVAILABLE = True
+except ImportError:
+    _REDIS_AVAILABLE = False
 
 # SQLAlchemy 2.x requires 'postgresql://' — Aiven provides 'postgres://' so fix it
 db_url = settings.DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -19,6 +24,9 @@ def get_db():
         db.close()
 
 async def get_redis():
+    if not _REDIS_AVAILABLE or not settings.REDIS_URL:
+        yield None
+        return
     client = redis.from_url(settings.REDIS_URL, decode_responses=True)
     try:
         yield client

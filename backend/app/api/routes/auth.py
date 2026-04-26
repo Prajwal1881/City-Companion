@@ -4,14 +4,17 @@ from app.db.database import get_db
 from app.schemas.schemas import OTPRequest, OTPVerify, TokenResponse, UserCreate, UserOut
 from app.models.user import User
 from app.core.security import create_access_token
-import random, redis
+import random
 from app.core.config import settings
 
 router = APIRouter()
 
 # Try to connect to Redis, fallback to dummy if not configured (though config.py has it)
 try:
+    import redis
     r = redis.from_url(settings.REDIS_URL, decode_responses=True)
+except ImportError:
+    r = None
 except Exception:
     r = None
 

@@ -119,6 +119,9 @@ async def send_heartbeat(current_user: User = Depends(get_current_user), redis=D
     Called by the client every 30 seconds.
     Sets a Redis key that auto-expires after 60 seconds if not refreshed.
     """
+    if redis is None:
+        return {"status": "active (redis disabled)"}
+        
     key = f"user:{current_user.id}:online"
     # Set key to "1" and set expiration (TTL)
     await redis.setex(key, PRESENCE_TTL, "1")
@@ -129,6 +132,9 @@ async def get_batch_online_status(user_ids: list[str], redis=Depends(get_redis))
     """
     Returns the online status for a list of users.
     """
+    if redis is None:
+        return {uid: False for uid in user_ids}
+        
     keys = [f"user:{uid}:online" for uid in user_ids]
     values = await redis.mget(keys)
     
