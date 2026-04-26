@@ -4,7 +4,10 @@ from sqlalchemy.orm import sessionmaker
 import redis.asyncio as redis
 from app.core.config import settings
 
-engine = create_engine(settings.DATABASE_URL)
+# SQLAlchemy 2.x requires 'postgresql://' — Aiven provides 'postgres://' so fix it
+db_url = settings.DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+engine = create_engine(db_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

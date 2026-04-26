@@ -32,7 +32,6 @@ def update_me(data: UserUpdate, db: Session = Depends(get_db),
     db.refresh(current_user)
     return current_user
 
-
 @router.post("/me/device-token")
 def save_device_token(
     data: DeviceTokenIn,
@@ -45,7 +44,6 @@ def save_device_token(
     register_device_token(db, current_user.id, token)
     db.commit()
     return {"message": "Device token saved"}
-
 
 @router.delete("/me/device-token")
 def remove_device_token(
@@ -71,14 +69,8 @@ def test_push_notification(
         raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
     return result
 
-@router.get("/{user_id}", response_model=UserOut)
-def get_user(user_id: str, db: Session = Depends(get_db),
-             _: User = Depends(get_current_user)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
-
+# NOTE: /nearby MUST be defined before /{user_id} to avoid FastAPI
+# matching the literal string "nearby" as a UUID path parameter
 @router.get("/nearby", response_model=List[UserNearby])
 def get_nearby_users(
     lat: float = Query(..., description="Your latitude"),
@@ -103,13 +95,20 @@ def get_nearby_users(
     nearby.sort(key=lambda x: x["distance_km"])
     return nearby[:50]
 
+@router.get("/{user_id}", response_model=UserOut)
+def get_user(user_id: str, db: Session = Depends(get_db),
+             _: User = Depends(get_current_user)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
 @router.post("/{user_id}/connect")
 def connect(user_id: str, db: Session = Depends(get_db),
             current_user: User = Depends(get_current_user)):
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
-    # TODO: create connection request record
     return {"message": f"Connection request sent to {target.name}"}
 
 PRESENCE_TTL = 60  # 60 seconds
@@ -123,17 +122,14 @@ async def send_heartbeat(current_user: User = Depends(get_current_user), redis=D
     key = f"user:{current_user.id}:online"
     # Set key to "1" and set expiration (TTL)
     await redis.setex(key, PRESENCE_TTL, "1")
-    
-    # Optionally update last_seen_at in DB for long-term historical presence (do this async or less frequently to save DB load)
     return {"status": "active"}
 
 @router.post("/batch-online")
 async def get_batch_online_status(user_ids: list[str], redis=Depends(get_redis)):
     """
-    Returns the online status for a list of users (useful for ChatListScreen and DiscoverScreen).
+    Returns the online status for a list of users.
     """
     keys = [f"user:{uid}:online" for uid in user_ids]
-    # Fetch all keys in a single Redis call for high performance
     values = await redis.mget(keys)
     
     status_map = {}

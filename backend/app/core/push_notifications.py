@@ -15,7 +15,7 @@ except ImportError:
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.models.device_token import UserDeviceToken
+from app.models.user import UserFCMToken
 
 logger = logging.getLogger(__name__)
 
@@ -59,23 +59,23 @@ def register_device_token(db: Session, user_id: UUID, token: str) -> None:
     if not token:
         return
     existing = (
-        db.query(UserDeviceToken)
-        .filter(UserDeviceToken.token == token)
+        db.query(UserFCMToken)
+        .filter(UserFCMToken.token == token)
         .first()
     )
     if existing:
         if existing.user_id != user_id:
             existing.user_id = user_id
         return
-    db.add(UserDeviceToken(user_id=user_id, token=token))
+    db.add(UserFCMToken(user_id=user_id, token=token))
 
 
 def unregister_device_token(db: Session, user_id: UUID, token: str) -> None:
     if not token:
         return
     (
-        db.query(UserDeviceToken)
-        .filter(UserDeviceToken.user_id == user_id, UserDeviceToken.token == token)
+        db.query(UserFCMToken)
+        .filter(UserFCMToken.user_id == user_id, UserFCMToken.token == token)
         .delete(synchronize_session=False)
     )
 
@@ -85,8 +85,8 @@ def _load_tokens_for_users(db: Session, user_ids: Iterable[UUID]) -> List[str]:
     if not ids:
         return []
     rows = (
-        db.query(UserDeviceToken.token)
-        .filter(UserDeviceToken.user_id.in_(ids))
+        db.query(UserFCMToken.token)
+        .filter(UserFCMToken.user_id.in_(ids))
         .all()
     )
     return [row[0] for row in rows]
@@ -145,8 +145,8 @@ def send_plan_cancelled_notification(
                             invalid_tokens.append(chunk[idx])
                 if invalid_tokens:
                     (
-                        db.query(UserDeviceToken)
-                        .filter(UserDeviceToken.token.in_(invalid_tokens))
+                        db.query(UserFCMToken)
+                        .filter(UserFCMToken.token.in_(invalid_tokens))
                         .delete(synchronize_session=False)
                     )
                     db.flush()
@@ -185,4 +185,3 @@ def send_test_notification(db: Session, user_id: UUID) -> dict:
     except Exception as exc:
         logger.error("Test push send failed:", exc_info=True)
         return {"success": False, "error": str(exc)}
-
