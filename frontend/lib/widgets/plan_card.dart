@@ -73,13 +73,16 @@ class PlanCard extends StatelessWidget {
             // Host row
             Row(children: [
               CircleAvatar(
-                  radius: 17,
-                  backgroundColor: color,
-                  child: Text(
-                    (plan['host_name'] as String? ?? 'U').substring(0, 1),
-                    style: const TextStyle(
-                        color: Colors.white, fontWeight: FontWeight.w800),
-                  )),
+                radius: 17,
+                backgroundColor: color,
+                child: Text(
+                  (plan['host_name']?.toString() ?? 'U').isNotEmpty
+                      ? (plan['host_name'].toString())[0].toUpperCase()
+                      : 'U',
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w800),
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                   child: RichText(
@@ -99,11 +102,11 @@ class PlanCard extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
                 decoration: BoxDecoration(
                     color: bg, borderRadius: BorderRadius.circular(99)),
-                child: Text('$emoji ${cat[0].toUpperCase()}${cat.substring(1)}',
-                    style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: color)),
+                child: Text(
+                  '$emoji ${cat.isNotEmpty ? "${cat[0].toUpperCase()}${cat.substring(1)}" : ""}',
+                  style: TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w700, color: color),
+                ),
               ),
             ]),
             const SizedBox(height: 10),
@@ -131,7 +134,9 @@ class PlanCard extends StatelessWidget {
 
             // Meta
             Wrap(spacing: 16, children: [
-              _meta('⏰', plan['plan_date']?.toString().substring(0, 16) ?? ''),
+              _meta('⏰', (plan['plan_date']?.toString() ?? '').length >= 16 
+                  ? plan['plan_date'].toString().substring(0, 16) 
+                  : plan['plan_date']?.toString() ?? ''),
               _meta('📍', plan['location'] ?? ''),
             ]),
             const SizedBox(height: 12),

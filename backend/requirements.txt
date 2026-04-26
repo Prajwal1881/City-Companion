@@ -13,3 +13,4 @@ httpx==0.27.0
 firebase-admin==6.4.0
 cloudinary==1.38.0
 celery==5.3.6
+email-validator==2.1.1

@@ -195,6 +195,14 @@ def delete_plan(plan_id: str, db: Session = Depends(get_db),
 
     plan.is_active = False
 
+    # Delete associated conversation, members, and messages
+    from app.models.other import Message, ConversationMember, Conversation
+    conv = _get_plan_conversation(db, plan.id)
+    if conv:
+        db.query(Message).filter(Message.conversation_id == conv.id).delete()
+        db.query(ConversationMember).filter(ConversationMember.conversation_id == conv.id).delete()
+        db.delete(conv)
+
     for member_id in recipient_member_ids:
         db.add(
             Notification(
@@ -209,6 +217,7 @@ def delete_plan(plan_id: str, db: Session = Depends(get_db),
 
     try:
         send_plan_cancelled_notification(
+            db=db,
             recipient_user_ids=recipient_ids,
             host_name=host_name,
             plan_title=plan_title,

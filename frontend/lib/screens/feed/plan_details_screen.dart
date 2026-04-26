@@ -139,7 +139,7 @@ class _PlanDetailsScreenState extends State<PlanDetailsScreen> {
       );
       return;
     }
-    context.go('/chat/$convId');
+    context.push('/chat/$convId');
   }
 
   @override
@@ -189,9 +189,9 @@ class _PlanDetailsScreenState extends State<PlanDetailsScreen> {
                           radius: 20,
                           backgroundColor: AppColors.orange,
                           child: Text(
-                            (_plan['host_name'] as String? ?? 'U')
-                                .substring(0, 1)
-                                .toUpperCase(),
+                            (_plan['host_name'] as String? ?? 'U').isNotEmpty 
+                                ? (_plan['host_name'] as String)[0].toUpperCase()
+                                : 'U',
                             style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w800,

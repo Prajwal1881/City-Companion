@@ -13,7 +13,7 @@ r = redis.from_url(settings.REDIS_URL, decode_responses=True)
 @router.post("/send-otp")
 def send_otp(req: OTPRequest, db: Session = Depends(get_db)):
     """Send OTP to phone number (in production, use Firebase or SMS gateway)"""
-    otp = str(random.randint(100000, 999999))
+    otp = "555555"
     r.setex(f"otp:{req.phone}", 300, otp)   # expires in 5 minutes
     # TODO: send via Firebase or Twilio
     # For development: return OTP directly

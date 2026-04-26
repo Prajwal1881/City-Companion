@@ -145,7 +145,11 @@ class ConnectionManager:
         self.active.setdefault(conversation_id, []).append(ws)
 
     def disconnect(self, conversation_id: str, ws: WebSocket):
-        self.active.get(conversation_id, []).remove(ws)
+        sockets = self.active.get(conversation_id, [])
+        if ws in sockets:
+            sockets.remove(ws)
+        if not sockets and conversation_id in self.active:
+            del self.active[conversation_id]
 
     async def broadcast(self, conversation_id: str, message: dict):
         for ws in self.active.get(conversation_id, []):
@@ -170,12 +174,21 @@ def get_conversations(db: Session = Depends(get_db), current_user: User = Depend
                 plan = db.query(Plan).filter(Plan.id == conv.reference_id).first()
                 can_delete = bool(plan and plan.host_id == current_user.id)
             last_msg = db.query(Message).filter_by(conversation_id=conv.id).order_by(Message.sent_at.desc()).first()
+            stable_time = last_msg.sent_at if last_msg else conv.created_at
+            
+
+            
             result.append({
-                **conv.__dict__,
+                "id": str(conv.id),
+                "type": conv.type,
                 "name": conv_name or "Plan Chat",
                 "last_message": last_msg.content if last_msg else None,
+                "last_message_at": stable_time,
+
                 "unread_count": 0,
                 "can_delete": can_delete,
+                "is_online": False,
+                "updated_at": conv.created_at, # Using created_at here too for stability
             })
     return result
 
@@ -224,22 +237,34 @@ async def websocket_endpoint(ws: WebSocket, token: str, conv_id: str, db: Sessio
         await ws.close(code=4001)
         return
 
+    from uuid import UUID
+    try:
+        conv_uuid = UUID(conv_id)
+        user_uuid = UUID(str(user_id))
+    except ValueError:
+        await ws.close(code=4003)
+        return
+
     await manager.connect(conv_id, ws)
     try:
         while True:
             data = await ws.receive_text()
             payload = json.loads(data)
             content = payload.get("content", "")
-            msg = Message(conversation_id=conv_id, sender_id=user_id, content=content)
+            msg = Message(conversation_id=conv_uuid, sender_id=user_uuid, content=content)
             db.add(msg)
+            import time
+            conv = db.query(Conversation).filter(Conversation.id == conv_uuid).first()
+            if conv:
+                conv.updated_at = int(time.time() * 1000)
             db.commit()
             db.refresh(msg)
             await manager.broadcast(conv_id, {
                 "id": str(msg.id),
-                "sender_id": str(user_id),
+                "sender_id": str(user_uuid),
                 "sender_name": user.name,
                 "content": content,
-                "sent_at": msg.sent_at.isoformat(),
+                "sent_at": msg.sent_at,
             })
     except WebSocketDisconnect:
         manager.disconnect(conv_id, ws)

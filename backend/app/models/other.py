@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import Column, String, Integer, Boolean, Float, Text, DateTime, ForeignKey, Table
+import time
+from sqlalchemy import Column, String, Integer, Boolean, Float, Text, DateTime, ForeignKey, Table, BigInteger
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from datetime import datetime
@@ -71,7 +72,8 @@ class Conversation(Base):
     type           = Column(String(20), default="dm")   # dm / group / plan
     reference_id   = Column(UUID(as_uuid=True), nullable=True)
     name           = Column(String(200), nullable=True)
-    created_at     = Column(DateTime, default=datetime.utcnow)
+    created_at     = Column(BigInteger, default=lambda: int(time.time() * 1000))
+    updated_at     = Column(BigInteger, default=lambda: int(time.time() * 1000), onupdate=lambda: int(time.time() * 1000))
 
     messages       = relationship("Message", back_populates="conversation")
     members        = relationship("ConversationMember", back_populates="conversation")
@@ -95,6 +97,6 @@ class Message(Base):
     sender_id       = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     content         = Column(Text, nullable=False)
     msg_type        = Column(String(20), default="text")   # text / image
-    sent_at         = Column(DateTime, default=datetime.utcnow)
+    sent_at         = Column(BigInteger, default=lambda: int(time.time() * 1000))
 
     conversation    = relationship("Conversation", back_populates="messages")

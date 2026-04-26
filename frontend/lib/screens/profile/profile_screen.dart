@@ -81,14 +81,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ]),
               const SizedBox(height: 8),
               // Settings
-              ...['⚙️ Settings', '🔔 Notifications', '🔒 Privacy & Safety', '❓ Help & Support', '🚪 Log out'].map((item) =>
+              ...['🚀 Test Push Notification', '⚙️ Settings', '🔔 Notifications', '🔒 Privacy & Safety', '❓ Help & Support', '🚪 Log out'].map((item) =>
                 Container(margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: AppColors.border, width: 1.5)),
                   child: ListTile(title: Text(item, style: const TextStyle(fontSize: 14)),
                     trailing: const Icon(Icons.chevron_right, color: AppColors.muted),
                     onTap: () async {
-                      if (item == '🚪 Log out') {
+                      if (item == '🚀 Test Push Notification') {
+                        try {
+                          final res = await ApiClient.testPush();
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('Push test sent! Success: ${res["success_count"]}, Fail: ${res["failure_count"]}'),
+                              backgroundColor: AppColors.green,
+                            ));
+                          }
+                        } catch (e) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text('Backend Push Error: $e'),
+                              backgroundColor: AppColors.orange,
+                            ));
+                          }
+                        }
+                      } else if (item == '🚪 Log out') {
                         await ApiClient.logout();
                         if (context.mounted) {
                           context.go('/auth/phone');

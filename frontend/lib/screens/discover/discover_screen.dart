@@ -19,8 +19,10 @@ class _DiscoverScreenState extends State<DiscoverScreen> {
     try {
       // TODO: use real device location
       final users = await ApiClient.getNearby(lat: 12.9716, lng: 77.5946);
-      setState(() { _users = users; _loading = false; });
-    } catch (_) { setState(() => _loading = false); }
+      if (mounted) setState(() { _users = users; _loading = false; });
+    } catch (_) { 
+      if (mounted) setState(() => _loading = false); 
+    }
   }
 
   @override

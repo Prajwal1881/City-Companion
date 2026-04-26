@@ -16,38 +16,107 @@ import '../screens/splash_screen.dart';
 import '../screens/feed/plan_details_screen.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
-
+final shellNavigatorKey = GlobalKey<NavigatorState>();
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     routes: [
-      GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
+      GoRoute(
+        path: '/splash',
+        pageBuilder: (_, __) => const MaterialPage(key: ValueKey('/splash'), child: SplashScreen()),
+      ),
       // Auth flow
-      GoRoute(path: '/auth/phone',   builder: (_, __) => const PhoneAuthScreen()),
-      GoRoute(path: '/auth/otp',     builder: (_, s)  => OtpScreen(phone: s.extra as String)),
-      GoRoute(path: '/auth/setup',   builder: (_, __) => const ProfileSetupScreen()),
+      GoRoute(
+        path: '/auth/phone',
+        pageBuilder: (_, __) => const MaterialPage(key: ValueKey('/auth/phone'), child: PhoneAuthScreen()),
+      ),
+      GoRoute(
+        path: '/auth/otp',
+        pageBuilder: (_, s) => MaterialPage(key: const ValueKey('/auth/otp'), child: OtpScreen(phone: s.extra as String)),
+      ),
+      GoRoute(
+        path: '/auth/setup',
+        pageBuilder: (_, __) => const MaterialPage(key: ValueKey('/auth/setup'), child: ProfileSetupScreen()),
+      ),
 
       // Plan Details (Not part of shell)
       GoRoute(
         path: '/plan/details',
-        builder: (context, state) => PlanDetailsScreen(plan: state.extra as Map<String, dynamic>),
+        pageBuilder: (context, state) => CustomTransitionPage(
+          key: const ValueKey('/plan/details'),
+          child: PlanDetailsScreen(plan: state.extra as Map<String, dynamic>),
+          transitionsBuilder: (_, __, ___, child) => child,
+        ),
+      ),
+
+      // Chat Room (Not part of shell)
+      GoRoute(
+        path: '/chat/:convId',
+        pageBuilder: (context, state) => CustomTransitionPage(
+          key: ValueKey('/chat/${state.pathParameters['convId']}'),
+          child: ChatRoomScreen(conversationId: state.pathParameters['convId']!),
+          transitionsBuilder: (_, __, ___, child) => child,
+        ),
       ),
 
       // Main shell with bottom nav
       ShellRoute(
-        builder: (_, __, child) => ShellScreen(child: child),
+        navigatorKey: shellNavigatorKey,
+        pageBuilder: (context, state, child) => MaterialPage(
+          key: const ValueKey('shell'),
+          child: ShellScreen(child: child),
+        ),
         routes: [
-          GoRoute(path: '/feed',        builder: (_, __) => const FeedScreen()),
-          GoRoute(path: '/discover',    builder: (_, __) => const DiscoverScreen()),
-          GoRoute(path: '/rooms',       builder: (_, __) => const RoomsScreen()),
-          GoRoute(path: '/communities', builder: (_, __) => const CommunitiesScreen()),
-          GoRoute(path: '/chat',        builder: (_, __) => const ChatListScreen()),
           GoRoute(
-            path: '/chat/:convId',
-            builder: (_, s) => ChatRoomScreen(convId: s.pathParameters['convId']!),
+            path: '/feed',
+            pageBuilder: (_, state) => CustomTransitionPage(
+              key: const ValueKey('/feed'),
+              child: const FeedScreen(),
+              transitionsBuilder: (_, __, ___, child) => child,
+            ),
           ),
-          GoRoute(path: '/profile',     builder: (_, __) => const ProfileScreen()),
+          GoRoute(
+            path: '/discover',
+            pageBuilder: (_, state) => CustomTransitionPage(
+              key: const ValueKey('/discover'),
+              child: const DiscoverScreen(),
+              transitionsBuilder: (_, __, ___, child) => child,
+            ),
+          ),
+          GoRoute(
+            path: '/rooms',
+            pageBuilder: (_, state) => CustomTransitionPage(
+              key: const ValueKey('/rooms'),
+              child: const RoomsScreen(),
+              transitionsBuilder: (_, __, ___, child) => child,
+            ),
+          ),
+          GoRoute(
+            path: '/communities',
+            pageBuilder: (_, state) => CustomTransitionPage(
+              key: const ValueKey('/communities'),
+              child: const CommunitiesScreen(),
+              transitionsBuilder: (_, __, ___, child) => child,
+            ),
+          ),
+          GoRoute(
+            path: '/chat',
+            pageBuilder: (_, state) => CustomTransitionPage(
+              key: const ValueKey('/chat'),
+              child: const ChatListScreen(),
+              transitionsBuilder: (_, __, ___, child) => child,
+            ),
+          ),
+
+          GoRoute(
+            path: '/profile',
+            pageBuilder: (_, state) => CustomTransitionPage(
+              key: const ValueKey('/profile'),
+              child: const ProfileScreen(),
+              transitionsBuilder: (_, __, ___, child) => child,
+            ),
+          ),
         ],
       ),
     ],

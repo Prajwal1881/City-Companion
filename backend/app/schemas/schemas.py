@@ -167,7 +167,7 @@ class MessageOut(BaseModel):
     sender_name: str
     content: str
     msg_type: str
-    sent_at: datetime
+    sent_at: int
     class Config:
         from_attributes = True
 
@@ -176,8 +176,12 @@ class ConversationOut(BaseModel):
     type: str
     name: Optional[str]
     last_message: Optional[str]
+    last_message_at: Optional[int] = None
+    display_time: Optional[str] = None
     unread_count: int = 0
     can_delete: bool = False
+    is_online: bool = False
+    updated_at: Optional[int] = None
     class Config:
         from_attributes = True
 

@@ -11,6 +11,19 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
 
     FIREBASE_CREDENTIALS_PATH: Optional[str] = None
+    FIREBASE_CREDENTIALS_JSON: Optional[str] = None
+    
+    FIREBASE_TYPE: Optional[str] = None
+    FIREBASE_PROJECT_ID: Optional[str] = None
+    FIREBASE_PRIVATE_KEY_ID: Optional[str] = None
+    FIREBASE_PRIVATE_KEY: Optional[str] = None
+    FIREBASE_CLIENT_EMAIL: Optional[str] = None
+    FIREBASE_CLIENT_ID: Optional[str] = None
+    FIREBASE_AUTH_URI: Optional[str] = None
+    FIREBASE_TOKEN_URI: Optional[str] = None
+    FIREBASE_AUTH_PROVIDER_X509_CERT_URL: Optional[str] = None
+    FIREBASE_CLIENT_X509_CERT_URL: Optional[str] = None
+    FIREBASE_UNIVERSE_DOMAIN: Optional[str] = "googleapis.com"
 
     CLOUDINARY_CLOUD_NAME: Optional[str] = None
     CLOUDINARY_API_KEY: Optional[str] = None
@@ -19,5 +32,22 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
+    def get_firebase_credentials_dict(self) -> dict | None:
+        if not self.FIREBASE_PROJECT_ID or not self.FIREBASE_PRIVATE_KEY:
+            return None
+        return {
+            "type": self.FIREBASE_TYPE or "service_account",
+            "project_id": self.FIREBASE_PROJECT_ID,
+            "private_key_id": self.FIREBASE_PRIVATE_KEY_ID,
+            "private_key": self.FIREBASE_PRIVATE_KEY.replace("\\n", "\n"),
+            "client_email": self.FIREBASE_CLIENT_EMAIL,
+            "client_id": self.FIREBASE_CLIENT_ID,
+            "auth_uri": self.FIREBASE_AUTH_URI or "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": self.FIREBASE_TOKEN_URI or "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": self.FIREBASE_AUTH_PROVIDER_X509_CERT_URL or "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": self.FIREBASE_CLIENT_X509_CERT_URL,
+            "universe_domain": self.FIREBASE_UNIVERSE_DOMAIN or "googleapis.com",
+        }
 
 settings = Settings()

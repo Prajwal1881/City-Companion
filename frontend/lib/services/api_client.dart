@@ -2,14 +2,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/api_endpoints.dart';
 import '../core/router.dart';
 
-const _baseUrl = 'http://localhost:8000/v1';
 const _storage = FlutterSecureStorage();
 
 class ApiClient {
   static final _dio = Dio(BaseOptions(
-    baseUrl: _baseUrl,
+    baseUrl: apiBaseUrl,
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 10),
   ));
@@ -79,6 +79,15 @@ class ApiClient {
 
   static Future<void> unregisterDeviceToken(String token) async {
     await _dio.delete('/users/me/device-token', data: {'token': token});
+  }
+
+  static Future<Map<String, dynamic>> testPush() async {
+    final res = await _dio.post('/users/me/test-push');
+    return res.data;
+  }
+
+  static Future<void> sendHeartbeat() async {
+    await _dio.post('/users/me/heartbeat');
   }
 
   static Future<List<dynamic>> getNearby(
@@ -196,5 +205,10 @@ class ApiClient {
 
   static Future<void> deleteConversation(String convId) async {
     await _dio.delete('/chat/conversations/$convId');
+  }
+
+  static Future<Map<String, dynamic>> getOrCreateDM(String targetUserId) async {
+    final res = await _dio.post('/chat/dm/$targetUserId');
+    return res.data;
   }
 }

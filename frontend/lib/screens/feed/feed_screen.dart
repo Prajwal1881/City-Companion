@@ -54,12 +54,16 @@ class _FeedScreenState extends State<FeedScreen> {
       final plans = await ApiClient.getPlans(
         category: _selectedCat == 'all' ? null : _selectedCat,
       );
-      setState(() {
-        _plans = plans;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _plans = plans;
+          _loading = false;
+        });
+      }
     } catch (e) {
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -268,6 +272,7 @@ class _FeedScreenState extends State<FeedScreen> {
                             (_, i) => Padding(
                               padding: const EdgeInsets.only(bottom: 14),
                               child: PlanCard(
+                                  key: ValueKey(_plans[i]['id']?.toString() ?? i.toString()),
                                   plan: _plans[i],
                                   onJoin: (id) async {
                                     try {

@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../core/api_endpoints.dart';
 
-const _wsBase = 'ws://localhost:8000/v1/chat/ws';
 const _storage = FlutterSecureStorage();
 
 class ChatService {
@@ -11,11 +11,16 @@ class ChatService {
 
   Future<void> connect(String convId) async {
     final token = await _storage.read(key: 'access_token');
-    final uri = Uri.parse('$_wsBase?token=$token&conv_id=$convId');
+    if (token == null || token.isEmpty) {
+      throw StateError('Missing access token for chat connection.');
+    }
+    final uri = buildChatWebSocketUri(token: token, conversationId: convId);
     _channel = WebSocketChannel.connect(uri);
     _channel!.stream.listen((data) {
       final msg = jsonDecode(data) as Map<String, dynamic>;
-      for (final cb in _listeners) cb(msg);
+      for (final cb in _listeners) {
+        cb(msg);
+      }
     });
   }
 
