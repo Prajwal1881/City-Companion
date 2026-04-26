@@ -252,7 +252,7 @@ class PlanCard extends StatelessWidget {
                 );
                 return;
               }
-              context.go('/chat/$convId');
+              context.push('/chat/$convId');
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: color,

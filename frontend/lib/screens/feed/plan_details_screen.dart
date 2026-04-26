@@ -139,7 +139,7 @@ class _PlanDetailsScreenState extends State<PlanDetailsScreen> {
       );
       return;
     }
-    context.go('/chat/$convId');
+    context.push('/chat/$convId');
   }
 
   @override

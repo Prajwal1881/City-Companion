@@ -28,10 +28,16 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/auth/otp',     builder: (_, s)  => OtpScreen(phone: s.extra as String)),
       GoRoute(path: '/auth/setup',   builder: (_, __) => const ProfileSetupScreen()),
 
-      // Plan Details (Not part of shell)
+      // Plan Details — outside shell so back button works correctly
       GoRoute(
         path: '/plan/details',
         builder: (context, state) => PlanDetailsScreen(plan: state.extra as Map<String, dynamic>),
+      ),
+
+      // Chat Room — outside shell so back button pops correctly from any entry point
+      GoRoute(
+        path: '/chat/:convId',
+        builder: (_, s) => ChatRoomScreen(convId: s.pathParameters['convId']!),
       ),
 
       // Main shell with bottom nav
@@ -43,10 +49,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: '/rooms',       builder: (_, __) => const RoomsScreen()),
           GoRoute(path: '/communities', builder: (_, __) => const CommunitiesScreen()),
           GoRoute(path: '/chat',        builder: (_, __) => const ChatListScreen()),
-          GoRoute(
-            path: '/chat/:convId',
-            builder: (_, s) => ChatRoomScreen(convId: s.pathParameters['convId']!),
-          ),
           GoRoute(path: '/profile',     builder: (_, __) => const ProfileScreen()),
         ],
       ),
