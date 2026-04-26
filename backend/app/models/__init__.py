@@ -1,7 +1,6 @@
-from app.models.user import User
+from app.models.user import User, UserFCMToken
 from app.models.plan import Plan
 from app.models.notification import Notification
-from app.models.device_token import UserDeviceToken
 from app.models.other import Room, Community, CommunityMember, Conversation, ConversationMember, Message
 
 class base:
