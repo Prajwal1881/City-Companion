@@ -17,7 +17,17 @@ base.Base.metadata.create_all(bind=engine)
 def _run_startup_migrations():
     migrations = [
         "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at BIGINT",
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(128) UNIQUE",
+        # Add firebase_uid column first (without UNIQUE — safe to re-run)
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(128)",
+        # Then add the unique constraint separately (safe to re-run)
+        """DO $$ BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint
+            WHERE conname = 'users_firebase_uid_key' AND conrelid = 'users'::regclass
+          ) THEN
+            ALTER TABLE users ADD CONSTRAINT users_firebase_uid_key UNIQUE (firebase_uid);
+          END IF;
+        END $$;""",
         """DO $$ BEGIN
           IF (SELECT data_type FROM information_schema.columns
               WHERE table_name='conversations' AND column_name='created_at') = 'timestamp without time zone'
