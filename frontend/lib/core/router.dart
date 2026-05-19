@@ -8,6 +8,8 @@ import '../screens/auth/profile_setup_screen.dart';
 import '../screens/feed/feed_screen.dart';
 import '../screens/discover/discover_screen.dart';
 import '../screens/rooms/rooms_screen.dart';
+import '../screens/rooms/room_detail_screen.dart';
+import '../screens/rooms/room_form_screen.dart';
 import '../screens/communities/communities_screen.dart';
 import '../screens/chat/chat_list_screen.dart';
 import '../screens/chat/chat_room_screen.dart';
@@ -58,6 +60,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           child: ChatRoomScreen(conversationId: state.pathParameters['convId']!),
           transitionsBuilder: (_, __, ___, child) => child,
         ),
+      ),
+
+      // Room screens (no bottom nav)
+      GoRoute(
+        path: '/rooms/detail',
+        builder: (_, s) => RoomDetailScreen(room: s.extra as Map<String, dynamic>),
+      ),
+      GoRoute(
+        path: '/rooms/form',
+        builder: (_, s) => RoomFormScreen(room: s.extra as Map<String, dynamic>?),
       ),
 
       // Main shell with bottom nav

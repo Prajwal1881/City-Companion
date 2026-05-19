@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
 import '../../services/api_client.dart';
 import '../../services/push_notification_service.dart';
+import '../../widgets/city_field.dart';
 
 // ─── OTP Screen ───────────────────────────────────────────────────────────────
 
@@ -161,15 +162,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             ),
           ],
           if (_step == 1) ...[
-            TextField(
-                controller: _city,
-                decoration: const InputDecoration(
-                    hintText: 'Current city (e.g. Bangalore)')),
+            CityField(controller: _city, hint: 'Current city'),
             const SizedBox(height: 16),
-            TextField(
-                controller: _hometown,
-                decoration:
-                    const InputDecoration(hintText: 'Hometown (e.g. Pune)')),
+            CityField(controller: _hometown, hint: 'Hometown'),
+
           ],
           if (_step == 2) ...[
             TextField(

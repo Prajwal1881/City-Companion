@@ -52,6 +52,18 @@ def get_room(room_id: str, db: Session = Depends(get_db),
     owner = db.query(User).filter(User.id == room.owner_id).first()
     return {**room.__dict__, "owner_name": owner.name if owner else "Unknown"}
 
+@router_rooms.put("/{room_id}", response_model=RoomOut)
+def update_room(room_id: str, data: RoomCreate, db: Session = Depends(get_db),
+                current_user: User = Depends(get_current_user)):
+    room = db.query(Room).filter(Room.id == room_id, Room.owner_id == current_user.id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Not found or unauthorized")
+    for field, value in data.dict().items():
+        setattr(room, field, value)
+    db.commit()
+    db.refresh(room)
+    return {**room.__dict__, "owner_name": current_user.name}
+
 @router_rooms.delete("/{room_id}")
 def delete_room(room_id: str, db: Session = Depends(get_db),
                 current_user: User = Depends(get_current_user)):

@@ -1,12 +1,20 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import os
+import shutil
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from math import radians, cos, sin, asin, sqrt
-from app.db.database import get_db, get_redis
+from app.db.database import get_db
 from app.schemas.schemas import DeviceTokenIn, UserOut, UserUpdate, UserNearby
 from app.models.user import User
 from app.core.security import get_current_user
 from app.core.push_notifications import register_device_token, unregister_device_token
+
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+_UPLOADS_DIR = os.path.join(_BASE_DIR, "uploads")
+_PROFILE_DIR = os.path.join(_UPLOADS_DIR, "profile_images")
+_ALLOWED_EXT = {"jpg", "jpeg", "png"}
+_MAX_MB = 5
 
 router = APIRouter()
 
@@ -32,45 +40,64 @@ def update_me(data: UserUpdate, db: Session = Depends(get_db),
     db.refresh(current_user)
     return current_user
 
+
+@router.post("/me/photo")
+async def upload_photo(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    if ext not in _ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail="Only JPG/JPEG/PNG allowed")
+    content = await file.read()
+    if len(content) > _MAX_MB * 1024 * 1024:
+        raise HTTPException(status_code=400, detail=f"Max file size is {_MAX_MB}MB")
+    os.makedirs(_PROFILE_DIR, exist_ok=True)
+    filename = f"user_{current_user.id}.{ext}"
+    with open(os.path.join(_PROFILE_DIR, filename), "wb") as f:
+        f.write(content)
+    current_user.profile_photo = f"/uploads/profile_images/{filename}"
+    db.commit()
+    return {"profile_photo": current_user.profile_photo}
+
+@router.delete("/me/photo")
+def delete_photo(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.profile_photo:
+        raise HTTPException(status_code=400, detail="No profile photo set")
+    filepath = os.path.join(_UPLOADS_DIR, current_user.profile_photo.lstrip("/uploads/"))
+    if os.path.exists(filepath):
+        os.remove(filepath)
+    current_user.profile_photo = None
+    db.commit()
+    return {"message": "Profile photo deleted"}
+
 @router.post("/me/device-token")
 def save_device_token(
     data: DeviceTokenIn,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     token = data.token.strip()
     if not token:
         raise HTTPException(status_code=400, detail="Device token is required")
-    register_device_token(db, current_user.id, token)
-    db.commit()
+    register_device_token(str(current_user.id), token)
     return {"message": "Device token saved"}
+
 
 @router.delete("/me/device-token")
 def remove_device_token(
     data: DeviceTokenIn,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     token = data.token.strip()
     if not token:
         raise HTTPException(status_code=400, detail="Device token is required")
-    unregister_device_token(db, current_user.id, token)
-    db.commit()
+    unregister_device_token(str(current_user.id), token)
     return {"message": "Device token removed"}
 
-@router.post("/me/test-push")
-def test_push_notification(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    from app.core.push_notifications import send_test_notification
-    result = send_test_notification(db, current_user.id)
-    if not result.get("success"):
-        raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
-    return result
-
-# NOTE: /nearby MUST be defined before /{user_id} to avoid FastAPI
-# matching the literal string "nearby" as a UUID path parameter
 @router.get("/nearby", response_model=List[UserNearby])
 def get_nearby_users(
     lat: float = Query(..., description="Your latitude"),
@@ -109,37 +136,5 @@ def connect(user_id: str, db: Session = Depends(get_db),
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
+    # TODO: create connection request record
     return {"message": f"Connection request sent to {target.name}"}
-
-PRESENCE_TTL = 60  # 60 seconds
-
-@router.post("/me/heartbeat")
-async def send_heartbeat(current_user: User = Depends(get_current_user), redis=Depends(get_redis)):
-    """
-    Called by the client every 30 seconds.
-    Sets a Redis key that auto-expires after 60 seconds if not refreshed.
-    """
-    if redis is None:
-        return {"status": "active (redis disabled)"}
-        
-    key = f"user:{current_user.id}:online"
-    # Set key to "1" and set expiration (TTL)
-    await redis.setex(key, PRESENCE_TTL, "1")
-    return {"status": "active"}
-
-@router.post("/batch-online")
-async def get_batch_online_status(user_ids: list[str], redis=Depends(get_redis)):
-    """
-    Returns the online status for a list of users.
-    """
-    if redis is None:
-        return {uid: False for uid in user_ids}
-        
-    keys = [f"user:{uid}:online" for uid in user_ids]
-    values = await redis.mget(keys)
-    
-    status_map = {}
-    for uid, val in zip(user_ids, values):
-        status_map[uid] = val == b"1" or val == "1"
-        
-    return status_map

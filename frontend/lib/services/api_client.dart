@@ -1,15 +1,17 @@
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 
-import '../core/api_endpoints.dart';
 import '../core/router.dart';
 
+const _baseUrl = 'http://localhost:8000/v1';
+const _mediaBase = 'http://localhost:8000';
 const _storage = FlutterSecureStorage();
 
 class ApiClient {
   static final _dio = Dio(BaseOptions(
-    baseUrl: apiBaseUrl,
+    baseUrl: _baseUrl,
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 10),
   ));
@@ -73,21 +75,28 @@ class ApiClient {
     return res.data;
   }
 
+  static Future<String> uploadProfilePhoto(
+      Uint8List bytes, String filename) async {
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
+    });
+    final res = await _dio.post('/users/me/photo', data: form);
+    return res.data['profile_photo'] as String;
+  }
+
+  static Future<void> deleteProfilePhoto() async {
+    await _dio.delete('/users/me/photo');
+  }
+
+  static String photoUrl(String? path) =>
+      path != null ? '$_mediaBase$path' : '';
+
   static Future<void> registerDeviceToken(String token) async {
     await _dio.post('/users/me/device-token', data: {'token': token});
   }
 
   static Future<void> unregisterDeviceToken(String token) async {
     await _dio.delete('/users/me/device-token', data: {'token': token});
-  }
-
-  static Future<Map<String, dynamic>> testPush() async {
-    final res = await _dio.post('/users/me/test-push');
-    return res.data;
-  }
-
-  static Future<void> sendHeartbeat() async {
-    await _dio.post('/users/me/heartbeat');
   }
 
   static Future<List<dynamic>> getNearby(
@@ -161,11 +170,19 @@ class ApiClient {
 
   // ── Rooms ─────────────────────────────────────────────────────────────
 
-  static Future<List<dynamic>> getRooms({String? city, int? maxRent}) async {
+  static Future<List<dynamic>> getRooms(
+      {String? city, int? maxRent, String? roomType, String? genderPref}) async {
     final res = await _dio.get('/rooms/', queryParameters: {
       if (city != null) 'city': city,
       if (maxRent != null) 'max_rent': maxRent,
+      if (roomType != null) 'room_type': roomType,
+      if (genderPref != null) 'gender_pref': genderPref,
     });
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> getRoom(String id) async {
+    final res = await _dio.get('/rooms/$id');
     return res.data;
   }
 
@@ -173,6 +190,20 @@ class ApiClient {
       Map<String, dynamic> data) async {
     final res = await _dio.post('/rooms/', data: data);
     return res.data;
+  }
+
+  static Future<Map<String, dynamic>> updateRoom(
+      String id, Map<String, dynamic> data) async {
+    final res = await _dio.put('/rooms/$id', data: data);
+    return res.data;
+  }
+
+  static Future<void> deleteRoom(String id) async {
+    await _dio.delete('/rooms/$id');
+  }
+
+  static Future<void> connectUser(String userId) async {
+    await _dio.post('/users/$userId/connect');
   }
 
   // ── Communities ───────────────────────────────────────────────────────
@@ -205,10 +236,5 @@ class ApiClient {
 
   static Future<void> deleteConversation(String convId) async {
     await _dio.delete('/chat/conversations/$convId');
-  }
-
-  static Future<Map<String, dynamic>> getOrCreateDM(String targetUserId) async {
-    final res = await _dio.post('/chat/dm/$targetUserId');
-    return res.data;
   }
 }
