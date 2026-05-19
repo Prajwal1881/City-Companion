@@ -2,7 +2,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.api.routes import auth, users, plans, rooms, communities, events, chat, notifications
+from app.api.routes import auth, users, plans, rooms, communities, events, chat, notifications, friends
 from app.core.config import settings
 from app.db.database import engine
 from app.models import base
@@ -15,51 +15,40 @@ base.Base.metadata.create_all(bind=engine)
 # Adds columns that were introduced after the initial DB creation.
 # Uses IF NOT EXISTS so it's safe to run on every startup.
 def _run_startup_migrations():
-    with engine.connect() as conn:
-        migrations = [
-            # Add missing columns
-            "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at BIGINT",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(128) UNIQUE",
-            # Convert conversations.created_at from TIMESTAMP to BIGINT (only if still timestamp)
-            """
-            DO $$ BEGIN
-              IF (SELECT data_type FROM information_schema.columns
-                  WHERE table_name='conversations' AND column_name='created_at') = 'timestamp without time zone'
-              THEN
-                ALTER TABLE conversations ALTER COLUMN created_at TYPE BIGINT
-                  USING EXTRACT(EPOCH FROM created_at)::BIGINT * 1000;
-              END IF;
-            END $$;
-            """,
-            # Convert conversations.updated_at from TIMESTAMP to BIGINT (only if still timestamp)
-            """
-            DO $$ BEGIN
-              IF (SELECT data_type FROM information_schema.columns
-                  WHERE table_name='conversations' AND column_name='updated_at') = 'timestamp without time zone'
-              THEN
-                ALTER TABLE conversations ALTER COLUMN updated_at TYPE BIGINT
-                  USING EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000;
-              END IF;
-            END $$;
-            """,
-            # Convert messages.sent_at from TIMESTAMP to BIGINT (only if still timestamp)
-            """
-            DO $$ BEGIN
-              IF (SELECT data_type FROM information_schema.columns
-                  WHERE table_name='messages' AND column_name='sent_at') = 'timestamp without time zone'
-              THEN
-                ALTER TABLE messages ALTER COLUMN sent_at TYPE BIGINT
-                  USING EXTRACT(EPOCH FROM sent_at)::BIGINT * 1000;
-              END IF;
-            END $$;
-            """,
-        ]
-        for sql in migrations:
-            try:
+    migrations = [
+        "ALTER TABLE conversations ADD COLUMN IF NOT EXISTS updated_at BIGINT",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(128) UNIQUE",
+        """DO $$ BEGIN
+          IF (SELECT data_type FROM information_schema.columns
+              WHERE table_name='conversations' AND column_name='created_at') = 'timestamp without time zone'
+          THEN
+            ALTER TABLE conversations ALTER COLUMN created_at TYPE BIGINT
+              USING EXTRACT(EPOCH FROM created_at)::BIGINT * 1000;
+          END IF;
+        END $$;""",
+        """DO $$ BEGIN
+          IF (SELECT data_type FROM information_schema.columns
+              WHERE table_name='conversations' AND column_name='updated_at') = 'timestamp without time zone'
+          THEN
+            ALTER TABLE conversations ALTER COLUMN updated_at TYPE BIGINT
+              USING EXTRACT(EPOCH FROM updated_at)::BIGINT * 1000;
+          END IF;
+        END $$;""",
+        """DO $$ BEGIN
+          IF (SELECT data_type FROM information_schema.columns
+              WHERE table_name='messages' AND column_name='sent_at') = 'timestamp without time zone'
+          THEN
+            ALTER TABLE messages ALTER COLUMN sent_at TYPE BIGINT
+              USING EXTRACT(EPOCH FROM sent_at)::BIGINT * 1000;
+          END IF;
+        END $$;""",
+    ]
+    for sql in migrations:
+        try:
+            with engine.begin() as conn:
                 conn.execute(text(sql))
-            except Exception as e:
-                pass  # Column already exists or table doesn't exist yet
-        conn.commit()
+        except Exception:
+            pass
 
 _run_startup_migrations()
 
@@ -85,6 +74,7 @@ app.include_router(communities.router, prefix="/v1/communities", tags=["Communit
 app.include_router(events.router,      prefix="/v1/events",      tags=["Events"])
 app.include_router(chat.router,        prefix="/v1/chat",        tags=["Chat"])
 app.include_router(notifications.router, prefix="/v1/notifications", tags=["Notifications"])
+app.include_router(friends.router,       prefix="/v1/friends",       tags=["Friends"])
 
 _uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(_uploads_dir, exist_ok=True)

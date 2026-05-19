@@ -1,3 +1,4 @@
+import math
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -5,6 +6,7 @@ from app.db.database import get_db
 from app.schemas.schemas import (
     LocationAutocompleteSuggestion,
     PlanCreate,
+    PlanNearbyOut,
     PlanOut,
 )
 from app.models.plan import Plan, plan_members
@@ -110,6 +112,57 @@ def create_plan(data: PlanCreate, db: Session = Depends(get_db),
         "conversation_id": conv.id if conv else None,
         "members": plan.members
     }
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
+    return R * 2 * math.asin(math.sqrt(max(0.0, min(1.0, a))))
+
+
+@router.get("/nearby", response_model=List[PlanNearbyOut])
+def nearby_plans(
+    lat: float = Query(...),
+    lng: float = Query(...),
+    radius_km: float = Query(10.0, le=30.0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    plans = (
+        db.query(Plan)
+        .filter(
+            Plan.is_active == True,
+            Plan.plan_date >= datetime.utcnow(),
+            Plan.latitude.isnot(None),
+            Plan.longitude.isnot(None),
+        )
+        .order_by(Plan.plan_date)
+        .all()
+    )
+
+    result = []
+    for p in plans:
+        dist = _haversine_km(lat, lng, p.latitude, p.longitude)
+        if dist <= radius_km:
+            host = db.query(User).filter(User.id == p.host_id).first()
+            conv = _get_plan_conversation(db, p.id)
+            result.append({
+                **p.__dict__,
+                "host_name": host.name if host else "Unknown",
+                "joined_count": len(p.members),
+                "has_joined": any(m.id == current_user.id for m in p.members),
+                "is_host": p.host_id == current_user.id,
+                "conversation_id": conv.id if conv else None,
+                "members": p.members,
+                "distance_km": round(dist, 2),
+            })
+
+    result.sort(key=lambda x: x["distance_km"])
+    return result
+
 
 @router.get("/{plan_id}", response_model=PlanOut)
 def get_plan(plan_id: str, db: Session = Depends(get_db),

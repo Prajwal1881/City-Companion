@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme.dart';
 import '../../services/api_client.dart';
 
@@ -198,37 +199,8 @@ class _RoomCard extends StatelessWidget {
           ],
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // Card header
-          Container(
-            height: 100,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                  colors: [Color(0xFFEEF3FF), Color(0xFFE8F5F4)]),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(19)),
-            ),
-            child: Stack(children: [
-              const Center(child: Text('🏠', style: TextStyle(fontSize: 44))),
-              Positioned(
-                top: 12,
-                right: 14,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: AppColors.orange,
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    '₹${_fmt(rent)}/mo',
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 13),
-                  ),
-                ),
-              ),
-            ]),
-          ),
+          // Card header — first photo or emoji fallback
+          _CardHeader(room: room, rent: rent),
 
           // Card body
           Padding(
@@ -305,4 +277,59 @@ class _RoomCard extends StatelessWidget {
     }
     return n.toString();
   }
+}
+
+// ── Card header — real photo or emoji fallback ────────────────────────────────
+
+class _CardHeader extends StatelessWidget {
+  final Map<String, dynamic> room;
+  final dynamic rent;
+  const _CardHeader({required this.room, required this.rent});
+
+  String _fmt(dynamic v) {
+    if (v == null) return '?';
+    final n = int.tryParse(v.toString()) ?? 0;
+    return n >= 1000 ? '${(n / 1000).toStringAsFixed(n % 1000 == 0 ? 0 : 1)}k' : n.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photos = (room['photos'] as List<dynamic>? ?? []);
+    final firstUrl = photos.isNotEmpty ? photos[0]['url']?.toString() : null;
+
+    return Container(
+      height: 110,
+      decoration: const BoxDecoration(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(19))),
+      child: Stack(fit: StackFit.expand, children: [
+        // Photo or gradient
+        ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(19)),
+          child: firstUrl != null && firstUrl.isNotEmpty
+            ? CachedNetworkImage(
+                imageUrl: ApiClient.photoUrl(firstUrl),
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) => _fallback())
+            : _fallback(),
+        ),
+        // Rent badge
+        Positioned(
+          top: 10, right: 12,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppColors.orange,
+              borderRadius: BorderRadius.circular(99)),
+            child: Text('₹${_fmt(rent)}/mo',
+              style: const TextStyle(
+                color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
+          )),
+      ]),
+    );
+  }
+
+  Widget _fallback() => Container(
+    decoration: const BoxDecoration(
+      gradient: LinearGradient(colors: [Color(0xFFEEF3FF), Color(0xFFE8F5F4)])),
+    child: const Center(child: Text('🏠', style: TextStyle(fontSize: 44))));
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme.dart';
 import '../../services/api_client.dart';
 
@@ -128,31 +130,8 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       ),
       body: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // ── Hero header ──────────────────────────────────────────────────
-          Container(
-            height: 180,
-            width: double.infinity,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFFEEF3FF), Color(0xFFE8F5F4)]),
-            ),
-            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              const Text('🏠', style: TextStyle(fontSize: 64)),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.orange,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-                child: Text(
-                  '₹${_fmt(rent)}/mo',
-                  style: const TextStyle(
-                    fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white),
-                ),
-              ),
-            ]),
-          ),
+          // ── Photo gallery / hero header ───────────────────────────────
+          _RoomPhotoGallery(room: _room, rent: rent),
 
           // ── Content ──────────────────────────────────────────────────────
           Padding(
@@ -262,4 +241,218 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 
   String _genderLabel(String g) =>
     const {'any': 'Any Gender', 'male': 'Males Only', 'female': 'Females Only'}[g] ?? g;
+}
+
+// ── Photo gallery / fallback hero ─────────────────────────────────────────────
+
+class _RoomPhotoGallery extends StatefulWidget {
+  final Map<String, dynamic> room;
+  final dynamic rent;
+  const _RoomPhotoGallery({required this.room, required this.rent});
+
+  @override
+  State<_RoomPhotoGallery> createState() => _RoomPhotoGalleryState();
+}
+
+class _RoomPhotoGalleryState extends State<_RoomPhotoGallery> {
+  int _current = 0;
+
+  void _openFullscreen(BuildContext context, List<String> photos, int index) {
+    Navigator.of(context).push(PageRouteBuilder(
+      opaque: false,
+      barrierColor: Colors.black,
+      pageBuilder: (_, __, ___) => _FullscreenGallery(
+        urls: photos.map((p) => ApiClient.photoUrl(p)).toList(),
+        initialIndex: index,
+      ),
+      transitionsBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+    ));
+  }
+
+  String _fmt(dynamic v) {
+    if (v == null) return '?';
+    final n = int.tryParse(v.toString()) ?? 0;
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(n % 1000 == 0 ? 0 : 1)}k';
+    return n.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final photos = (widget.room['photos'] as List<dynamic>? ?? [])
+        .map((p) => p['url']?.toString() ?? '')
+        .where((u) => u.isNotEmpty)
+        .toList();
+
+    // No photos — show gradient + emoji fallback
+    if (photos.isEmpty) {
+      return Container(
+        height: 200,
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFEEF3FF), Color(0xFFE8F5F4)])),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          const Text('🏠', style: TextStyle(fontSize: 64)),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.orange,
+              borderRadius: BorderRadius.circular(99)),
+            child: Text('₹${_fmt(widget.rent)}/mo',
+              style: const TextStyle(
+                fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
+          ),
+        ]),
+      );
+    }
+
+    // Has photos — swipeable PageView gallery
+    return SizedBox(
+      height: 240,
+      child: Stack(children: [
+        PageView.builder(
+          itemCount: photos.length,
+          onPageChanged: (i) => setState(() => _current = i),
+          itemBuilder: (_, i) => GestureDetector(
+            onTap: () => _openFullscreen(context, photos, i),
+            child: CachedNetworkImage(
+              imageUrl: ApiClient.photoUrl(photos[i]),
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => Container(
+                color: const Color(0xFFEEF3FF),
+                child: const Center(child: Icon(Icons.broken_image,
+                  color: AppColors.muted, size: 48))),
+            ),
+          ),
+        ),
+
+        // Rent badge
+        Positioned(
+          bottom: 14, left: 16,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+            decoration: BoxDecoration(
+              color: AppColors.orange,
+              borderRadius: BorderRadius.circular(99),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2),
+                blurRadius: 8)]),
+            child: Text('₹${_fmt(widget.rent)}/mo',
+              style: const TextStyle(
+                fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white)),
+          ),
+        ),
+
+        // Page dots
+        if (photos.length > 1)
+          Positioned(
+            bottom: 14, right: 16,
+            child: Row(children: List.generate(photos.length, (i) => Container(
+              width: i == _current ? 18 : 7,
+              height: 7,
+              margin: const EdgeInsets.only(left: 4),
+              decoration: BoxDecoration(
+                color: i == _current ? AppColors.orange : Colors.white70,
+                borderRadius: BorderRadius.circular(99)),
+            ))),
+          ),
+      ]),
+    );
+  }
+}
+
+// ── Full-screen pinch-zoom gallery ────────────────────────────────────────────
+
+class _FullscreenGallery extends StatefulWidget {
+  final List<String> urls;
+  final int initialIndex;
+  const _FullscreenGallery({required this.urls, required this.initialIndex});
+
+  @override
+  State<_FullscreenGallery> createState() => _FullscreenGalleryState();
+}
+
+class _FullscreenGalleryState extends State<_FullscreenGallery> {
+  late final PageController _ctrl;
+  late int _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.initialIndex;
+    _ctrl = PageController(initialPage: widget.initialIndex);
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnnotatedRegion(
+      value: const SystemUiOverlayStyle(statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(children: [
+          // Swipeable + pinch-zoom pages
+          PageView.builder(
+            controller: _ctrl,
+            itemCount: widget.urls.length,
+            onPageChanged: (i) => setState(() => _current = i),
+            itemBuilder: (_, i) => InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 4.0,
+              child: Center(
+                child: CachedNetworkImage(
+                  imageUrl: widget.urls[i],
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => const Center(
+                    child: CircularProgressIndicator(color: Colors.white54)),
+                  errorWidget: (_, __, ___) => const Icon(
+                    Icons.broken_image, color: Colors.white30, size: 64),
+                ),
+              ),
+            ),
+          ),
+
+          // Back button
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 4,
+            left: 4,
+            child: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
+              onPressed: () => Navigator.pop(context))),
+
+          // Counter (1/3)
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 14,
+            right: 16,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(99)),
+              child: Text('${_current + 1} / ${widget.urls.length}',
+                style: const TextStyle(color: Colors.white, fontSize: 13)),
+            )),
+
+          // Page dots
+          if (widget.urls.length > 1)
+            Positioned(
+              bottom: MediaQuery.of(context).padding.bottom + 20,
+              left: 0, right: 0,
+              child: Row(mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(widget.urls.length, (i) => Container(
+                  width: i == _current ? 20 : 7,
+                  height: 7,
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  decoration: BoxDecoration(
+                    color: i == _current ? AppColors.orange : Colors.white38,
+                    borderRadius: BorderRadius.circular(99)),
+                )))),
+        ]),
+      ),
+    );
+  }
 }

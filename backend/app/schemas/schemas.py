@@ -96,6 +96,8 @@ class PlanOut(BaseModel):
     title: str
     description: Optional[str]
     location: Optional[str]
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     plan_date: datetime
     max_members: int
     joined_count: int
@@ -107,6 +109,9 @@ class PlanOut(BaseModel):
     members: List[PlanMemberOut] = []
     class Config:
         from_attributes = True
+
+class PlanNearbyOut(PlanOut):
+    distance_km: float = 0.0
 
 class LocationAutocompleteSuggestion(BaseModel):
     place_id: str
@@ -128,12 +133,17 @@ class RoomCreate(BaseModel):
     smoking_allowed: bool = False
     available_from: Optional[datetime] = None
 
+class RoomPhotoOut(BaseModel):
+    id: str
+    url: str
+
 class RoomOut(RoomCreate):
     id: UUID
     owner_id: UUID
     owner_name: str
     is_active: bool
     created_at: datetime
+    photos: List[RoomPhotoOut] = []
     class Config:
         from_attributes = True
 
@@ -185,6 +195,25 @@ class ConversationOut(BaseModel):
     class Config:
         from_attributes = True
 
+
+# ── FRIENDS ───────────────────────────────────────────────────────────────────
+
+class FriendOut(BaseModel):
+    id: str
+    name: str
+    profession: Optional[str] = None
+    current_city: Optional[str] = None
+    profile_photo: Optional[str] = None
+    trust_score: float = 0.0
+
+class FriendRequestOut(BaseModel):
+    id: str
+    requester_id: str
+    requester_name: str
+    requester_photo: Optional[str] = None
+    requester_profession: Optional[str] = None
+    requester_city: Optional[str] = None
+    created_at: datetime
 
 # ── NOTIFICATIONS ───────────────────────────────────────────────────────────
 

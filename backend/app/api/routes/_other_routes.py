@@ -1,13 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+import os
+import uuid as _uuid
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, File, UploadFile
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.db.database import get_db
 from app.schemas.schemas import RoomCreate, RoomOut, CommunityCreate, CommunityOut, MessageCreate, MessageOut, ConversationOut
-from app.models.other import Room, Community, CommunityMember, Conversation, ConversationMember, Message
+from app.models.other import Room, RoomImage, Community, CommunityMember, Conversation, ConversationMember, Message
 from app.models.plan import Plan
 from app.models.user import User
 from app.core.security import get_current_user, verify_token
 import json
+
+_BASE_DIR    = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+_UPLOADS_DIR = os.path.join(_BASE_DIR, "uploads")
+_ROOM_IMG_DIR = os.path.join(_UPLOADS_DIR, "room_images")
+_ALLOWED_EXT  = {"jpg", "jpeg", "png"}
+_MAX_PHOTOS   = 6
+
+
+def _photos(db, room_id):
+    imgs = db.query(RoomImage).filter(RoomImage.room_id == room_id).all()
+    return [{"id": str(i.id), "url": i.image_path} for i in imgs]
 
 # ── ROOMS ──────────────────────────────────────────────────────────────────
 
@@ -31,7 +44,8 @@ def list_rooms(
     result = []
     for r in rooms:
         owner = db.query(User).filter(User.id == r.owner_id).first()
-        result.append({**r.__dict__, "owner_name": owner.name if owner else "Unknown"})
+        result.append({**r.__dict__, "owner_name": owner.name if owner else "Unknown",
+                        "photos": _photos(db, r.id)})
     return result
 
 @router_rooms.post("/", response_model=RoomOut)
@@ -41,7 +55,7 @@ def create_room(data: RoomCreate, db: Session = Depends(get_db),
     db.add(room)
     db.commit()
     db.refresh(room)
-    return {**room.__dict__, "owner_name": current_user.name}
+    return {**room.__dict__, "owner_name": current_user.name, "photos": []}
 
 @router_rooms.get("/{room_id}", response_model=RoomOut)
 def get_room(room_id: str, db: Session = Depends(get_db),
@@ -50,7 +64,8 @@ def get_room(room_id: str, db: Session = Depends(get_db),
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
     owner = db.query(User).filter(User.id == room.owner_id).first()
-    return {**room.__dict__, "owner_name": owner.name if owner else "Unknown"}
+    return {**room.__dict__, "owner_name": owner.name if owner else "Unknown",
+            "photos": _photos(db, room.id)}
 
 @router_rooms.put("/{room_id}", response_model=RoomOut)
 def update_room(room_id: str, data: RoomCreate, db: Session = Depends(get_db),
@@ -62,7 +77,8 @@ def update_room(room_id: str, data: RoomCreate, db: Session = Depends(get_db),
         setattr(room, field, value)
     db.commit()
     db.refresh(room)
-    return {**room.__dict__, "owner_name": current_user.name}
+    return {**room.__dict__, "owner_name": current_user.name,
+            "photos": _photos(db, room.id)}
 
 @router_rooms.delete("/{room_id}")
 def delete_room(room_id: str, db: Session = Depends(get_db),
@@ -73,6 +89,65 @@ def delete_room(room_id: str, db: Session = Depends(get_db),
     room.is_active = False
     db.commit()
     return {"message": "Listing deactivated"}
+
+
+@router_rooms.post("/{room_id}/photos")
+async def upload_room_photo(
+    room_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    room = db.query(Room).filter(Room.id == room_id, Room.owner_id == current_user.id).first()
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found or unauthorized")
+
+    count = db.query(RoomImage).filter(RoomImage.room_id == room_id).count()
+    if count >= _MAX_PHOTOS:
+        raise HTTPException(status_code=400, detail=f"Maximum {_MAX_PHOTOS} photos per room")
+
+    ext = (file.filename or "").rsplit(".", 1)[-1].lower()
+    if ext not in _ALLOWED_EXT:
+        raise HTTPException(status_code=400, detail="Only JPG/JPEG/PNG allowed")
+
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Max file size is 5MB")
+
+    os.makedirs(_ROOM_IMG_DIR, exist_ok=True)
+    filename = f"room_{room_id}_{_uuid.uuid4().hex[:8]}.{ext}"
+    with open(os.path.join(_ROOM_IMG_DIR, filename), "wb") as f:
+        f.write(content)
+
+    img = RoomImage(room_id=room_id, image_path=f"/uploads/room_images/{filename}")
+    db.add(img)
+    db.commit()
+    db.refresh(img)
+    return {"id": str(img.id), "url": img.image_path}
+
+
+@router_rooms.delete("/{room_id}/photos/{photo_id}")
+def delete_room_photo(
+    room_id: str,
+    photo_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    room = db.query(Room).filter(Room.id == room_id, Room.owner_id == current_user.id).first()
+    if not room:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    img = db.query(RoomImage).filter(RoomImage.id == photo_id, RoomImage.room_id == room_id).first()
+    if not img:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    filepath = os.path.join(_UPLOADS_DIR, img.image_path.lstrip("/uploads/"))
+    if os.path.exists(filepath):
+        os.remove(filepath)
+
+    db.delete(img)
+    db.commit()
+    return {"message": "Photo deleted"}
 
 
 # ── COMMUNITIES ────────────────────────────────────────────────────────────
@@ -168,6 +243,36 @@ class ConnectionManager:
             await ws.send_text(json.dumps(message))
 
 manager = ConnectionManager()
+
+@router_chat.post("/dm/{user_id}")
+def get_or_create_dm(
+    user_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get existing DM conversation with a user, or create one."""
+    other = db.query(User).filter(User.id == user_id).first()
+    if not other:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Find an existing DM shared by both users
+    my_ids = {r.conversation_id for r in db.query(ConversationMember).filter_by(user_id=current_user.id).all()}
+    their_ids = {r.conversation_id for r in db.query(ConversationMember).filter_by(user_id=user_id).all()}
+    shared = my_ids & their_ids
+    for cid in shared:
+        conv = db.query(Conversation).filter(Conversation.id == cid, Conversation.type == "dm").first()
+        if conv:
+            return {"conversation_id": str(conv.id)}
+
+    # Create new DM
+    conv = Conversation(type="dm", name=None)
+    db.add(conv)
+    db.flush()
+    db.add(ConversationMember(conversation_id=conv.id, user_id=current_user.id))
+    db.add(ConversationMember(conversation_id=conv.id, user_id=user_id))
+    db.commit()
+    return {"conversation_id": str(conv.id)}
+
 
 @router_chat.get("/conversations", response_model=List[ConversationOut])
 def get_conversations(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

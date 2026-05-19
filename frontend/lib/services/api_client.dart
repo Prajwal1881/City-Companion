@@ -106,6 +106,21 @@ class ApiClient {
     return res.data;
   }
 
+  static Future<List<Map<String, dynamic>>> getNearbyPlans({
+    required double lat,
+    required double lng,
+    double radiusKm = 10.0,
+  }) async {
+    final res = await _dio.get('/plans/nearby', queryParameters: {
+      'lat': lat,
+      'lng': lng,
+      'radius_km': radiusKm,
+    });
+    return (res.data as List<dynamic>)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
   // ── Plans ─────────────────────────────────────────────────────────────
 
   static Future<List<dynamic>> getPlans({String? category}) async {
@@ -168,6 +183,44 @@ class ApiClient {
     await _dio.delete('/notifications/$notificationId');
   }
 
+  static Future<Map<String, dynamic>> getOrCreateDM(String userId) async {
+    final res = await _dio.post('/chat/dm/$userId');
+    return res.data;
+  }
+
+  // ── Friends ───────────────────────────────────────────────────────────
+
+  static Future<List<dynamic>> getFriends() async {
+    final res = await _dio.get('/friends/');
+    return res.data;
+  }
+
+  static Future<List<dynamic>> getFriendRequests() async {
+    final res = await _dio.get('/friends/requests');
+    return res.data;
+  }
+
+  static Future<Map<String, dynamic>> getFriendStatus(String userId) async {
+    final res = await _dio.get('/friends/status/$userId');
+    return res.data;
+  }
+
+  static Future<void> sendFriendRequest(String userId) async {
+    await _dio.post('/friends/$userId');
+  }
+
+  static Future<void> acceptFriendRequest(String requestId) async {
+    await _dio.post('/friends/requests/$requestId/accept');
+  }
+
+  static Future<void> declineFriendRequest(String requestId) async {
+    await _dio.post('/friends/requests/$requestId/decline');
+  }
+
+  static Future<void> unfriend(String userId) async {
+    await _dio.delete('/friends/$userId');
+  }
+
   // ── Rooms ─────────────────────────────────────────────────────────────
 
   static Future<List<dynamic>> getRooms(
@@ -200,6 +253,19 @@ class ApiClient {
 
   static Future<void> deleteRoom(String id) async {
     await _dio.delete('/rooms/$id');
+  }
+
+  static Future<Map<String, dynamic>> uploadRoomPhoto(
+      String roomId, Uint8List bytes, String filename) async {
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: filename),
+    });
+    final res = await _dio.post('/rooms/$roomId/photos', data: form);
+    return res.data;
+  }
+
+  static Future<void> deleteRoomPhoto(String roomId, String photoId) async {
+    await _dio.delete('/rooms/$roomId/photos/$photoId');
   }
 
   static Future<void> connectUser(String userId) async {

@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -16,6 +19,7 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   Map<String, dynamic>? _user;
   int _hostedCount  = 0;
+  int _friendCount  = 0;
   bool _uploading   = false;
 
   @override
@@ -23,12 +27,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _load() async {
     try {
-      final results = await Future.wait([ApiClient.getMe(), ApiClient.getPlans()]);
-      final user  = results[0] as Map<String, dynamic>;
-      final plans = results[1] as List<dynamic>;
+      final results = await Future.wait([
+        ApiClient.getMe(), ApiClient.getPlans(), ApiClient.getFriends()]);
+      final user    = results[0] as Map<String, dynamic>;
+      final plans   = results[1] as List<dynamic>;
+      final friends = results[2] as List<dynamic>;
       if (mounted) setState(() {
         _user        = user;
         _hostedCount = plans.where((p) => p['is_host'] == true).length;
+        _friendCount = friends.length;
       });
     } catch (_) {
       if (mounted) setState(() => _user = {'name': 'User'});
@@ -39,13 +46,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _pickAndUpload(ImageSource source) async {
     final xfile = await ImagePicker().pickImage(
-        source: source, maxWidth: 800, imageQuality: 85);
+        source: source, maxWidth: 1200, imageQuality: 90);
     if (xfile == null || !mounted) return;
+
+    final bytes = await xfile.readAsBytes();
+    final cropped = await Navigator.of(context).push<Uint8List>(PageRouteBuilder(
+      opaque: true,
+      pageBuilder: (_, __, ___) => _PhotoCropScreen(imageBytes: bytes),
+      transitionsBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+    ));
+    if (cropped == null || !mounted) return;
+
     setState(() => _uploading = true);
     try {
-      final bytes = await xfile.readAsBytes();
-      final ext   = xfile.name.contains('.') ? xfile.name.split('.').last.toLowerCase() : 'jpg';
-      final path  = await ApiClient.uploadProfilePhoto(bytes, 'photo.$ext');
+      final path = await ApiClient.uploadProfilePhoto(cropped, 'photo.png');
       if (mounted) setState(() => _user!['profile_photo'] = path);
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context)
@@ -225,7 +240,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   _stat('⭐', trustScore, 'Score'),
                   _divider(),
-                  _stat('📍', currentCity.isNotEmpty ? currentCity : '—', 'City'),
+                  GestureDetector(
+                    onTap: () => context.go('/discover'),
+                    child: _stat('🤝', _friendCount.toString(), 'Friends'),
+                  ),
                   _divider(),
                   _stat('🚀', _hostedCount.toString(), 'Hosted'),
                 ]),
@@ -380,6 +398,152 @@ class _ProfileScreenState extends State<ProfileScreen> {
         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
           color: ok ? AppColors.green : AppColors.amber)),
     ]));
+}
+
+// ── Photo crop / move-and-scale screen ───────────────────────────────────────
+
+class _PhotoCropScreen extends StatefulWidget {
+  final Uint8List imageBytes;
+  const _PhotoCropScreen({required this.imageBytes});
+
+  @override
+  State<_PhotoCropScreen> createState() => _PhotoCropScreenState();
+}
+
+class _PhotoCropScreenState extends State<_PhotoCropScreen> {
+  final _cropKey  = GlobalKey();
+  final _ctrl     = TransformationController();
+  bool _processing = false;
+
+  static const double _cropSize = 300.0;
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  Future<void> _confirm() async {
+    setState(() => _processing = true);
+    try {
+      final boundary =
+          _cropKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null || !mounted) { Navigator.of(context).pop(); return; }
+      final image = await boundary.toImage(pixelRatio: 3.0);
+      final data  = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (!mounted) return;
+      Navigator.of(context).pop(data!.buffer.asUint8List());
+    } finally {
+      if (mounted) setState(() => _processing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pad   = MediaQuery.of(context).padding;
+    final bytes = widget.imageBytes;
+
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(children: [
+
+          // Blurred / dim background
+          Positioned.fill(child: Opacity(
+            opacity: 0.3,
+            child: Image.memory(bytes, fit: BoxFit.cover))),
+
+          // Crop circle — only this is captured by RepaintBoundary
+          Center(child: RepaintBoundary(
+            key: _cropKey,
+            child: SizedBox(
+              width: _cropSize, height: _cropSize,
+              child: ClipOval(child: InteractiveViewer(
+                transformationController: _ctrl,
+                boundaryMargin: const EdgeInsets.all(double.infinity),
+                minScale: 1.0,
+                maxScale: 4.0,
+                child: Image.memory(bytes,
+                  width: _cropSize, height: _cropSize,
+                  fit: BoxFit.cover),
+              )),
+            ),
+          )),
+
+          // Dark overlay with circular cutout (decorative — does not affect capture)
+          Positioned.fill(child: IgnorePointer(child: CustomPaint(
+            painter: _CircleOverlayPainter(radius: _cropSize / 2)))),
+
+          // Top bar
+          Positioned(
+            top: pad.top, left: 0, right: 0,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(children: [
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white),
+                  onPressed: () => Navigator.of(context).pop()),
+                const Expanded(child: Text('Move and Scale',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600))),
+                const SizedBox(width: 48),
+              ]),
+            ),
+          ),
+
+          // "Use Photo" button
+          Positioned(
+            bottom: pad.bottom + 32, left: 32, right: 32,
+            child: ElevatedButton(
+              onPressed: _processing ? null : _confirm,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.orange,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: AppColors.orange.withOpacity(0.6),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14))),
+              child: _processing
+                ? const SizedBox(width: 22, height: 22,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2))
+                : const Text('Use Photo',
+                    style: TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _CircleOverlayPainter extends CustomPainter {
+  final double radius;
+  const _CircleOverlayPainter({required this.radius});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    // Dark mask with oval cut-out
+    canvas.drawPath(
+      Path()
+        ..addRect(Offset.zero & size)
+        ..addOval(Rect.fromCircle(center: center, radius: radius))
+        ..fillType = PathFillType.evenOdd,
+      Paint()..color = Colors.black.withOpacity(0.55),
+    );
+    // Circle border
+    canvas.drawCircle(
+      center, radius,
+      Paint()
+        ..color = Colors.white.withOpacity(0.4)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_CircleOverlayPainter old) => old.radius != radius;
 }
 
 // ── Full-screen photo viewer ──────────────────────────────────────────────────

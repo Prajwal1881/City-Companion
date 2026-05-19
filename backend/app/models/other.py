@@ -30,6 +30,20 @@ class Room(Base):
     updated_at     = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner          = relationship("User", back_populates="rooms")
+    images         = relationship("RoomImage", back_populates="room", cascade="all, delete-orphan")
+
+
+# ── ROOM IMAGES ────────────────────────────────────────────────────────────
+
+class RoomImage(Base):
+    __tablename__ = "room_images"
+
+    id         = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    room_id    = Column(UUID(as_uuid=True), ForeignKey("rooms.id", ondelete="CASCADE"), nullable=False, index=True)
+    image_path = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    room = relationship("Room", back_populates="images")
 
 
 # ── COMMUNITIES ────────────────────────────────────────────────────────────
