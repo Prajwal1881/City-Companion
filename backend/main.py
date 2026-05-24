@@ -52,6 +52,16 @@ def _run_startup_migrations():
               USING EXTRACT(EPOCH FROM sent_at)::BIGINT * 1000;
           END IF;
         END $$;""",
+        # ── Performance indexes ──
+        "CREATE INDEX IF NOT EXISTS idx_plans_active_date ON plans (plan_date) WHERE is_active = true",
+        "CREATE INDEX IF NOT EXISTS idx_plans_lat_lng ON plans (latitude, longitude) WHERE latitude IS NOT NULL AND longitude IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_users_lat_lng ON users (latitude, longitude) WHERE latitude IS NOT NULL AND longitude IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_rooms_active_city ON rooms (city, created_at DESC) WHERE is_active = true",
+        "CREATE INDEX IF NOT EXISTS idx_messages_conv_sent ON messages (conversation_id, sent_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_conv_members_user ON conversation_members (user_id)",
+        "CREATE INDEX IF NOT EXISTS idx_friendships_lookup ON friendships (requester_id, addressee_id, status)",
+        "CREATE INDEX IF NOT EXISTS idx_conversations_type_ref ON conversations (type, reference_id) WHERE reference_id IS NOT NULL",
+        "CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications (user_id, is_read, created_at DESC)",
     ]
     for sql in migrations:
         try:

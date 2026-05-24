@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List
 from app.db.database import get_db
@@ -20,16 +20,32 @@ def _get_friendship(db, user_a_id, user_b_id):
 # ── List my friends ───────────────────────────────────────────────────────────
 
 @router.get("/", response_model=List[FriendOut])
-def list_friends(db: Session = Depends(get_db),
-                 current_user: User = Depends(get_current_user)):
+def list_friends(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     friendships = db.query(Friendship).filter(
         ((Friendship.requester_id == current_user.id) | (Friendship.addressee_id == current_user.id)),
         Friendship.status == "accepted"
-    ).all()
+    ).limit(limit).offset(offset).all()
+
+    friend_ids = []
+    for f in friendships:
+        fid = f.addressee_id if str(f.requester_id) == str(current_user.id) else f.requester_id
+        friend_ids.append(fid)
+
+    if not friend_ids:
+        return []
+
+    friends = db.query(User).filter(User.id.in_(friend_ids)).all()
+    friend_map = {f.id: f for f in friends}
+
     result = []
     for f in friendships:
         fid = f.addressee_id if str(f.requester_id) == str(current_user.id) else f.requester_id
-        friend = db.query(User).filter(User.id == fid).first()
+        friend = friend_map.get(fid)
         if friend:
             result.append({
                 "id": str(friend.id),
@@ -45,15 +61,27 @@ def list_friends(db: Session = Depends(get_db),
 # ── Pending requests RECEIVED ─────────────────────────────────────────────────
 
 @router.get("/requests", response_model=List[FriendRequestOut])
-def get_requests(db: Session = Depends(get_db),
-                 current_user: User = Depends(get_current_user)):
+def get_requests(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     reqs = db.query(Friendship).filter(
         Friendship.addressee_id == current_user.id,
         Friendship.status == "pending"
-    ).order_by(Friendship.created_at.desc()).all()
+    ).order_by(Friendship.created_at.desc()).limit(limit).offset(offset).all()
+
+    if not reqs:
+        return []
+
+    requester_ids = [r.requester_id for r in reqs]
+    requesters = db.query(User).filter(User.id.in_(requester_ids)).all()
+    requester_map = {u.id: u for u in requesters}
+
     result = []
     for r in reqs:
-        requester = db.query(User).filter(User.id == r.requester_id).first()
+        requester = requester_map.get(r.requester_id)
         if requester:
             result.append({
                 "id": str(r.id),

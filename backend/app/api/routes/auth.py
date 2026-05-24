@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.schemas.schemas import OTPRequest, OTPVerify, TokenResponse, UserCreate, UserOut
 from app.models.user import User
-from app.core.security import create_access_token
+from app.core.security import create_access_token, get_current_user
 import random
 from app.core.config import settings
 
@@ -72,7 +72,7 @@ def verify_otp(req: OTPVerify, db: Session = Depends(get_db)):
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh_token(current_user: User = Depends(lambda: None)):
+def refresh_token(current_user: User = Depends(get_current_user)):
     """Refresh access token"""
-    token = create_access_token({"sub": "user_id"})
-    return {"access_token": token}
+    token = create_access_token({"sub": str(current_user.id)})
+    return {"access_token": token, "token_type": "bearer"}

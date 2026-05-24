@@ -12,7 +12,14 @@ except ImportError:
 # SQLAlchemy 2.x requires 'postgresql://' — Aiven provides 'postgres://' so fix it
 db_url = settings.DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(db_url)
+engine = create_engine(
+    db_url,
+    pool_size=20,
+    max_overflow=30,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    pool_timeout=30,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

@@ -1,15 +1,22 @@
+import asyncio
+import json
 import os
+import time
 import uuid as _uuid
+from uuid import UUID as PyUUID
+
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, File, UploadFile
-from sqlalchemy.orm import Session
+from sqlalchemy import func as sa_func
+from sqlalchemy.orm import Session, joinedload, selectinload
 from typing import List, Optional
-from app.db.database import get_db
+
+from app.db.database import get_db, SessionLocal
 from app.schemas.schemas import RoomCreate, RoomOut, CommunityCreate, CommunityOut, MessageCreate, MessageOut, ConversationOut
 from app.models.other import Room, RoomImage, Community, CommunityMember, Conversation, ConversationMember, Message
 from app.models.plan import Plan
 from app.models.user import User
 from app.core.security import get_current_user, verify_token
-import json
+from app.core.config import settings
 
 _BASE_DIR    = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 _UPLOADS_DIR = os.path.join(_BASE_DIR, "uploads")
@@ -32,20 +39,28 @@ def list_rooms(
     max_rent: Optional[int] = Query(None),
     gender_pref: Optional[str] = Query(None),
     room_type: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    q = db.query(Room).filter(Room.is_active == True)
+    q = (
+        db.query(Room)
+        .options(joinedload(Room.owner), selectinload(Room.images))
+        .filter(Room.is_active == True)
+    )
     if city:        q = q.filter(Room.city.ilike(f"%{city}%"))
     if max_rent:    q = q.filter(Room.rent_inr <= max_rent)
     if gender_pref: q = q.filter(Room.gender_pref == gender_pref)
     if room_type:   q = q.filter(Room.room_type == room_type)
-    rooms = q.order_by(Room.created_at.desc()).all()
+    rooms = q.order_by(Room.created_at.desc()).limit(limit).offset(offset).all()
     result = []
     for r in rooms:
-        owner = db.query(User).filter(User.id == r.owner_id).first()
-        result.append({**r.__dict__, "owner_name": owner.name if owner else "Unknown",
-                        "photos": _photos(db, r.id)})
+        result.append({
+            **r.__dict__,
+            "owner_name": r.owner.name if r.owner else "Unknown",
+            "photos": [{"id": str(i.id), "url": i.image_path} for i in r.images],
+        })
     return result
 
 @router_rooms.post("/", response_model=RoomOut)
@@ -60,12 +75,19 @@ def create_room(data: RoomCreate, db: Session = Depends(get_db),
 @router_rooms.get("/{room_id}", response_model=RoomOut)
 def get_room(room_id: str, db: Session = Depends(get_db),
              _: User = Depends(get_current_user)):
-    room = db.query(Room).filter(Room.id == room_id).first()
+    room = (
+        db.query(Room)
+        .options(joinedload(Room.owner), selectinload(Room.images))
+        .filter(Room.id == room_id)
+        .first()
+    )
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
-    owner = db.query(User).filter(User.id == room.owner_id).first()
-    return {**room.__dict__, "owner_name": owner.name if owner else "Unknown",
-            "photos": _photos(db, room.id)}
+    return {
+        **room.__dict__,
+        "owner_name": room.owner.name if room.owner else "Unknown",
+        "photos": [{"id": str(i.id), "url": i.image_path} for i in room.images],
+    }
 
 @router_rooms.put("/{room_id}", response_model=RoomOut)
 def update_room(room_id: str, data: RoomCreate, db: Session = Depends(get_db),
@@ -188,7 +210,10 @@ def join_community(community_id: str, db: Session = Depends(get_db),
     if existing:
         raise HTTPException(status_code=400, detail="Already a member")
     db.add(CommunityMember(community_id=community_id, user_id=current_user.id))
-    c.member_count += 1
+    db.query(Community).filter(Community.id == community_id).update(
+        {Community.member_count: Community.member_count + 1},
+        synchronize_session="fetch",
+    )
     db.commit()
     return {"message": f"Joined {c.name}"}
 
@@ -198,9 +223,13 @@ def leave_community(community_id: str, db: Session = Depends(get_db),
     member = db.query(CommunityMember).filter_by(community_id=community_id, user_id=current_user.id).first()
     if member:
         db.delete(member)
-        c = db.query(Community).filter(Community.id == community_id).first()
-        if c and c.member_count > 0:
-            c.member_count -= 1
+        db.query(Community).filter(
+            Community.id == community_id,
+            Community.member_count > 0,
+        ).update(
+            {Community.member_count: Community.member_count - 1},
+            synchronize_session="fetch",
+        )
         db.commit()
     return {"message": "Left community"}
 
@@ -222,27 +251,82 @@ def create_event(_: User = Depends(get_current_user)):
 
 router_chat = APIRouter()
 
-# In-memory connection manager (use Redis pub/sub for multi-server production)
-class ConnectionManager:
-    def __init__(self):
-        self.active: dict[str, list[WebSocket]] = {}
+try:
+    import redis.asyncio as aioredis
+    _AIOREDIS_AVAILABLE = True
+except ImportError:
+    _AIOREDIS_AVAILABLE = False
+
+
+class RedisConnectionManager:
+    def __init__(self, redis_url: str | None):
+        self.redis_url = redis_url
+        self.local_connections: dict[str, list[WebSocket]] = {}
+        self._pubsub_tasks: dict[str, asyncio.Task] = {}
+        self._redis = None
+
+    async def _get_redis(self):
+        if self._redis is None and _AIOREDIS_AVAILABLE and self.redis_url:
+            try:
+                self._redis = aioredis.from_url(self.redis_url, decode_responses=True)
+                await self._redis.ping()
+            except Exception:
+                self._redis = None
+        return self._redis
 
     async def connect(self, conversation_id: str, ws: WebSocket):
         await ws.accept()
-        self.active.setdefault(conversation_id, []).append(ws)
+        self.local_connections.setdefault(conversation_id, []).append(ws)
+        if conversation_id not in self._pubsub_tasks:
+            self._pubsub_tasks[conversation_id] = asyncio.create_task(
+                self._subscribe(conversation_id)
+            )
 
     def disconnect(self, conversation_id: str, ws: WebSocket):
-        sockets = self.active.get(conversation_id, [])
+        sockets = self.local_connections.get(conversation_id, [])
         if ws in sockets:
             sockets.remove(ws)
-        if not sockets and conversation_id in self.active:
-            del self.active[conversation_id]
+        if not sockets:
+            self.local_connections.pop(conversation_id, None)
+            task = self._pubsub_tasks.pop(conversation_id, None)
+            if task:
+                task.cancel()
 
     async def broadcast(self, conversation_id: str, message: dict):
-        for ws in self.active.get(conversation_id, []):
-            await ws.send_text(json.dumps(message))
+        r = await self._get_redis()
+        if r:
+            await r.publish(f"chat:{conversation_id}", json.dumps(message))
+        else:
+            await self._local_broadcast(conversation_id, message)
 
-manager = ConnectionManager()
+    async def _subscribe(self, conversation_id: str):
+        r = await self._get_redis()
+        if not r:
+            return
+        pubsub = r.pubsub()
+        await pubsub.subscribe(f"chat:{conversation_id}")
+        try:
+            async for raw_message in pubsub.listen():
+                if raw_message["type"] == "message":
+                    await self._local_broadcast(
+                        conversation_id, json.loads(raw_message["data"])
+                    )
+        except asyncio.CancelledError:
+            await pubsub.unsubscribe(f"chat:{conversation_id}")
+            await pubsub.aclose()
+
+    async def _local_broadcast(self, conversation_id: str, message: dict):
+        dead = []
+        for ws in self.local_connections.get(conversation_id, []):
+            try:
+                await ws.send_text(json.dumps(message))
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(conversation_id, ws)
+
+
+manager = RedisConnectionManager(settings.REDIS_URL)
 
 @router_chat.post("/dm/{user_id}")
 def get_or_create_dm(
@@ -275,38 +359,74 @@ def get_or_create_dm(
 
 
 @router_chat.get("/conversations", response_model=List[ConversationOut])
-def get_conversations(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    memberships = db.query(ConversationMember).filter_by(user_id=current_user.id).all()
+def get_conversations(
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    conversations = (
+        db.query(Conversation)
+        .join(ConversationMember, ConversationMember.conversation_id == Conversation.id)
+        .filter(ConversationMember.user_id == current_user.id)
+        .limit(limit).offset(offset)
+        .all()
+    )
+    if not conversations:
+        return []
+
+    conv_ids = [c.id for c in conversations]
+
+    plan_ref_ids = [c.reference_id for c in conversations if c.type == "plan" and c.reference_id]
+    plans_map = {}
+    if plan_ref_ids:
+        plans = db.query(Plan).filter(Plan.id.in_(plan_ref_ids)).all()
+        plans_map = {p.id: p for p in plans}
+
+    last_msg_subq = (
+        db.query(
+            Message.conversation_id,
+            sa_func.max(Message.sent_at).label("max_sent_at"),
+        )
+        .filter(Message.conversation_id.in_(conv_ids))
+        .group_by(Message.conversation_id)
+        .subquery()
+    )
+    last_msgs = (
+        db.query(Message)
+        .join(
+            last_msg_subq,
+            (Message.conversation_id == last_msg_subq.c.conversation_id)
+            & (Message.sent_at == last_msg_subq.c.max_sent_at),
+        )
+        .all()
+    )
+    msg_map = {m.conversation_id: m for m in last_msgs}
+
     result = []
-    for m in memberships:
-        conv = db.query(Conversation).filter(Conversation.id == m.conversation_id).first()
-        if conv:
-            conv_name = conv.name
-            can_delete = False
-            if (not conv_name) and conv.type == "plan" and conv.reference_id:
-                plan = db.query(Plan).filter(Plan.id == conv.reference_id).first()
-                if plan and plan.title:
-                    conv_name = plan.title
-            if conv.type == "plan" and conv.reference_id:
-                plan = db.query(Plan).filter(Plan.id == conv.reference_id).first()
-                can_delete = bool(plan and plan.host_id == current_user.id)
-            last_msg = db.query(Message).filter_by(conversation_id=conv.id).order_by(Message.sent_at.desc()).first()
-            stable_time = last_msg.sent_at if last_msg else conv.created_at
-            
+    for conv in conversations:
+        conv_name = conv.name
+        can_delete = False
+        plan = plans_map.get(conv.reference_id) if conv.type == "plan" and conv.reference_id else None
+        if plan:
+            if not conv_name and plan.title:
+                conv_name = plan.title
+            can_delete = (plan.host_id == current_user.id)
 
-            
-            result.append({
-                "id": str(conv.id),
-                "type": conv.type,
-                "name": conv_name or "Plan Chat",
-                "last_message": last_msg.content if last_msg else None,
-                "last_message_at": stable_time,
+        last_msg = msg_map.get(conv.id)
+        stable_time = last_msg.sent_at if last_msg else conv.created_at
 
-                "unread_count": 0,
-                "can_delete": can_delete,
-                "is_online": False,
-                "updated_at": conv.created_at, # Using created_at here too for stability
-            })
+        result.append({
+            "id": str(conv.id),
+            "type": conv.type,
+            "name": conv_name or "Plan Chat",
+            "last_message": last_msg.content if last_msg else None,
+            "last_message_at": stable_time,
+            "unread_count": 0,
+            "can_delete": can_delete,
+            "is_online": False,
+            "updated_at": conv.created_at,
+        })
     return result
 
 
@@ -334,33 +454,57 @@ def delete_conversation(
     return {"message": "Plan chat thread deleted"}
 
 @router_chat.get("/conversations/{conv_id}/messages", response_model=List[MessageOut])
-def get_messages(conv_id: str, db: Session = Depends(get_db),
-                 _: User = Depends(get_current_user)):
-    msgs = db.query(Message).filter_by(conversation_id=conv_id).order_by(Message.sent_at).all()
+def get_messages(
+    conv_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    before: Optional[int] = Query(None, description="Cursor: fetch messages before this sent_at timestamp"),
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    q = db.query(Message).filter_by(conversation_id=conv_id)
+    if before is not None:
+        q = q.filter(Message.sent_at < before)
+    msgs = q.order_by(Message.sent_at.desc()).limit(limit).all()
+    msgs.reverse()
+
+    if not msgs:
+        return []
+
+    sender_ids = list({m.sender_id for m in msgs})
+    senders = db.query(User).filter(User.id.in_(sender_ids)).all()
+    sender_map = {s.id: s for s in senders}
+
     result = []
     for m in msgs:
-        sender = db.query(User).filter(User.id == m.sender_id).first()
+        sender = sender_map.get(m.sender_id)
         result.append({**m.__dict__, "sender_name": sender.name if sender else "Unknown"})
     return result
 
 @router_chat.websocket("/ws")
-async def websocket_endpoint(ws: WebSocket, token: str, conv_id: str, db: Session = Depends(get_db)):
+async def websocket_endpoint(ws: WebSocket, token: str, conv_id: str):
     user_id = verify_token(token)
     if not user_id:
         await ws.close(code=4001)
         return
-    user = db.query(User).filter(User.id == user_id).first()
+
+    try:
+        conv_uuid = PyUUID(conv_id)
+        user_uuid = PyUUID(str(user_id))
+    except ValueError:
+        await ws.close(code=4003)
+        return
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_uuid).first()
+    finally:
+        db.close()
+
     if not user:
         await ws.close(code=4001)
         return
 
-    from uuid import UUID
-    try:
-        conv_uuid = UUID(conv_id)
-        user_uuid = UUID(str(user_id))
-    except ValueError:
-        await ws.close(code=4003)
-        return
+    user_name = user.name
 
     await manager.connect(conv_id, ws)
     try:
@@ -368,20 +512,27 @@ async def websocket_endpoint(ws: WebSocket, token: str, conv_id: str, db: Sessio
             data = await ws.receive_text()
             payload = json.loads(data)
             content = payload.get("content", "")
-            msg = Message(conversation_id=conv_uuid, sender_id=user_uuid, content=content)
-            db.add(msg)
-            import time
-            conv = db.query(Conversation).filter(Conversation.id == conv_uuid).first()
-            if conv:
-                conv.updated_at = int(time.time() * 1000)
-            db.commit()
-            db.refresh(msg)
+
+            db = SessionLocal()
+            try:
+                msg = Message(conversation_id=conv_uuid, sender_id=user_uuid, content=content)
+                db.add(msg)
+                conv = db.query(Conversation).filter(Conversation.id == conv_uuid).first()
+                if conv:
+                    conv.updated_at = int(time.time() * 1000)
+                db.commit()
+                db.refresh(msg)
+                msg_id = str(msg.id)
+                msg_sent_at = msg.sent_at
+            finally:
+                db.close()
+
             await manager.broadcast(conv_id, {
-                "id": str(msg.id),
+                "id": msg_id,
                 "sender_id": str(user_uuid),
-                "sender_name": user.name,
+                "sender_name": user_name,
                 "content": content,
-                "sent_at": msg.sent_at,
+                "sent_at": msg_sent_at,
             })
     except WebSocketDisconnect:
         manager.disconnect(conv_id, ws)

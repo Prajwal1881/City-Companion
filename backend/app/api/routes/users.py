@@ -3,8 +3,8 @@ import shutil
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from math import radians, cos, sin, asin, sqrt
 from app.db.database import get_db
+from app.core.geo import bounding_box, haversine_km
 from app.schemas.schemas import DeviceTokenIn, UserOut, UserUpdate, UserNearby
 from app.models.user import User
 from app.core.security import get_current_user
@@ -18,13 +18,6 @@ _MAX_MB = 5
 
 router = APIRouter()
 
-def haversine(lat1, lon1, lat2, lon2):
-    R = 6371
-    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = sin(dlat/2)**2 + cos(lat1)*cos(lat2)*sin(dlon/2)**2
-    return 2 * R * asin(sqrt(a))
 
 @router.get("/me", response_model=UserOut)
 def get_me(current_user: User = Depends(get_current_user)):
@@ -106,25 +99,30 @@ def remove_device_token(
 def get_nearby_users(
     lat: float = Query(..., description="Your latitude"),
     lng: float = Query(..., description="Your longitude"),
-    radius_km: float = Query(10, description="Search radius in km"),
+    radius_km: float = Query(10, description="Search radius in km", le=30),
+    limit: int = Query(50, ge=1, le=100),
     interest: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    lat_min, lat_max, lng_min, lng_max = bounding_box(lat, lng, radius_km)
+
     users = db.query(User).filter(
         User.id != current_user.id,
         User.latitude.isnot(None),
         User.longitude.isnot(None),
+        User.latitude.between(lat_min, lat_max),
+        User.longitude.between(lng_min, lng_max),
     ).all()
 
     nearby = []
     for u in users:
-        dist = haversine(lat, lng, u.latitude, u.longitude)
+        dist = haversine_km(lat, lng, u.latitude, u.longitude)
         if dist <= radius_km:
             nearby.append({**u.__dict__, "distance_km": round(dist, 1), "online": False, "interests": []})
 
     nearby.sort(key=lambda x: x["distance_km"])
-    return nearby[:50]
+    return nearby[:limit]
 
 @router.get("/{user_id}", response_model=UserOut)
 def get_user(user_id: str, db: Session = Depends(get_db),

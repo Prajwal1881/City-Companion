@@ -1,8 +1,8 @@
-import math
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, subqueryload
 from typing import List, Optional
 from app.db.database import get_db
+from app.core.geo import bounding_box, haversine_km
 from app.schemas.schemas import (
     LocationAutocompleteSuggestion,
     PlanCreate,
@@ -70,21 +70,35 @@ def list_plans(
     city: Optional[str] = Query(None),
     lat: Optional[float] = Query(None),
     lng: Optional[float] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    q = db.query(Plan).filter(Plan.is_active == True, Plan.plan_date >= datetime.utcnow())
+    q = (
+        db.query(Plan)
+        .options(joinedload(Plan.host), subqueryload(Plan.members))
+        .filter(Plan.is_active == True, Plan.plan_date >= datetime.utcnow())
+    )
     if category:
         q = q.filter(Plan.category == category)
-    plans = q.order_by(Plan.plan_date).all()
+    plans = q.order_by(Plan.plan_date).limit(limit).offset(offset).all()
+
+    plan_ids = [p.id for p in plans]
+    conv_map = {}
+    if plan_ids:
+        convs = db.query(Conversation).filter(
+            Conversation.type == "plan",
+            Conversation.reference_id.in_(plan_ids),
+        ).all()
+        conv_map = {c.reference_id: c for c in convs}
 
     result = []
     for p in plans:
-        host = db.query(User).filter(User.id == p.host_id).first()
-        conv = _get_plan_conversation(db, p.id)
+        conv = conv_map.get(p.id)
         result.append({
             **p.__dict__,
-            "host_name": host.name if host else "Unknown",
+            "host_name": p.host.name if p.host else "Unknown",
             "joined_count": len(p.members),
             "has_joined": any(m.id == _.id for m in p.members),
             "is_host": p.host_id == _.id,
@@ -113,45 +127,49 @@ def create_plan(data: PlanCreate, db: Session = Depends(get_db),
         "members": plan.members
     }
 
-def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    R = 6371.0
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-    a = (math.sin(dlat / 2) ** 2
-         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
-         * math.sin(dlon / 2) ** 2)
-    return R * 2 * math.asin(math.sqrt(max(0.0, min(1.0, a))))
-
-
 @router.get("/nearby", response_model=List[PlanNearbyOut])
 def nearby_plans(
     lat: float = Query(...),
     lng: float = Query(...),
     radius_km: float = Query(10.0, le=30.0),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    lat_min, lat_max, lng_min, lng_max = bounding_box(lat, lng, radius_km)
+
     plans = (
         db.query(Plan)
+        .options(joinedload(Plan.host), subqueryload(Plan.members))
         .filter(
             Plan.is_active == True,
             Plan.plan_date >= datetime.utcnow(),
             Plan.latitude.isnot(None),
             Plan.longitude.isnot(None),
+            Plan.latitude.between(lat_min, lat_max),
+            Plan.longitude.between(lng_min, lng_max),
         )
         .order_by(Plan.plan_date)
         .all()
     )
 
+    plan_ids = [p.id for p in plans]
+    conv_map = {}
+    if plan_ids:
+        convs = db.query(Conversation).filter(
+            Conversation.type == "plan",
+            Conversation.reference_id.in_(plan_ids),
+        ).all()
+        conv_map = {c.reference_id: c for c in convs}
+
     result = []
     for p in plans:
-        dist = _haversine_km(lat, lng, p.latitude, p.longitude)
+        dist = haversine_km(lat, lng, p.latitude, p.longitude)
         if dist <= radius_km:
-            host = db.query(User).filter(User.id == p.host_id).first()
-            conv = _get_plan_conversation(db, p.id)
+            conv = conv_map.get(p.id)
             result.append({
                 **p.__dict__,
-                "host_name": host.name if host else "Unknown",
+                "host_name": p.host.name if p.host else "Unknown",
                 "joined_count": len(p.members),
                 "has_joined": any(m.id == current_user.id for m in p.members),
                 "is_host": p.host_id == current_user.id,
@@ -161,20 +179,24 @@ def nearby_plans(
             })
 
     result.sort(key=lambda x: x["distance_km"])
-    return result
+    return result[:limit]
 
 
 @router.get("/{plan_id}", response_model=PlanOut)
 def get_plan(plan_id: str, db: Session = Depends(get_db),
              _: User = Depends(get_current_user)):
-    plan = db.query(Plan).filter(Plan.id == plan_id).first()
+    plan = (
+        db.query(Plan)
+        .options(joinedload(Plan.host), subqueryload(Plan.members))
+        .filter(Plan.id == plan_id)
+        .first()
+    )
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
-    host = db.query(User).filter(User.id == plan.host_id).first()
     conv = _get_plan_conversation(db, plan.id)
     return {
-        **plan.__dict__, 
-        "host_name": host.name if host else "Unknown", 
+        **plan.__dict__,
+        "host_name": plan.host.name if plan.host else "Unknown",
         "joined_count": len(plan.members),
         "has_joined": any(m.id == _.id for m in plan.members),
         "is_host": plan.host_id == _.id,
