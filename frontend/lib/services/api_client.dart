@@ -3,17 +3,22 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 
+import '../core/api_endpoints.dart';
 import '../core/router.dart';
 
-const _baseUrl = 'http://localhost:8000/v1';
-const _mediaBase = 'http://localhost:8000';
+// Derive the media base (scheme + host, no path) from the shared apiBaseUrl
+String get _baseUrl => apiBaseUrl;
+String get _mediaBase {
+  final uri = Uri.parse(apiBaseUrl);
+  return '${uri.scheme}://${uri.host}${uri.port != 80 && uri.port != 443 ? ":${uri.port}" : ""}';
+}
 const _storage = FlutterSecureStorage();
 
 class ApiClient {
   static final _dio = Dio(BaseOptions(
     baseUrl: _baseUrl,
-    connectTimeout: const Duration(seconds: 10),
-    receiveTimeout: const Duration(seconds: 10),
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 30),
   ));
 
   static void init() {
