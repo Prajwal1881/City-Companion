@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -1101,12 +1102,21 @@ class _ResultsPanel extends StatelessWidget {
           itemCount: total,
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (_, i) {
-            if (i < plans.length) {
-              return _PlanBottomCard(
-                plan: plans[i], onTap: () => onPlanTap(plans[i]));
-            }
-            final room = rooms[i - plans.length];
-            return _RoomBottomCard(room: room, onTap: () => onRoomTap(room));
+            final Widget card = i < plans.length
+                ? _PlanBottomCard(
+                    plan: plans[i], onTap: () => onPlanTap(plans[i]))
+                : _RoomBottomCard(
+                    room: rooms[i - plans.length],
+                    onTap: () => onRoomTap(rooms[i - plans.length]));
+            return card
+                .animate()
+                .fadeIn(duration: 300.ms, delay: (50 * (i.clamp(0, 8))).ms)
+                .slideY(
+                    begin: 0.12,
+                    end: 0,
+                    duration: 300.ms,
+                    delay: (50 * (i.clamp(0, 8))).ms,
+                    curve: Curves.easeOutCubic);
           },
         )),
       ]),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
 import '../../services/api_client.dart';
 import '../../widgets/plan_card.dart';
@@ -292,7 +293,17 @@ class _FeedScreenState extends State<FeedScreen> {
                                                     'Could not join plan')));
                                       }
                                     }
-                                  }),
+                                  })
+                              .animate()
+                              .fadeIn(
+                                  duration: 350.ms,
+                                  delay: (60 * (i.clamp(0, 8))).ms)
+                              .slideY(
+                                  begin: 0.12,
+                                  end: 0,
+                                  duration: 350.ms,
+                                  delay: (60 * (i.clamp(0, 8))).ms,
+                                  curve: Curves.easeOutCubic),
                             ),
                             childCount: _plans.length,
                           ),

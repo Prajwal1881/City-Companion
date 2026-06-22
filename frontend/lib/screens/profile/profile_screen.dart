@@ -240,9 +240,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   _stat('⭐', trustScore, 'Score'),
                   _divider(),
-                  GestureDetector(
-                    onTap: () => context.go('/discover'),
-                    child: _stat('🤝', _friendCount.toString(), 'Friends'),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => context.go('/discover'),
+                      child: _statBody('🤝', _friendCount.toString(), 'Friends'),
+                    ),
                   ),
                   _divider(),
                   _stat('🚀', _hostedCount.toString(), 'Hosted'),
@@ -371,13 +374,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
     name.isNotEmpty ? name[0].toUpperCase() : 'U',
     style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900)));
 
-  Widget _stat(String icon, String val, String label) => Expanded(child: Column(children: [
+  Widget _stat(String icon, String val, String label) =>
+      Expanded(child: _statBody(icon, val, label));
+
+  // The Column content without Expanded, so it can also be placed inside a
+  // GestureDetector (which must itself sit inside an Expanded).
+  Widget _statBody(String icon, String val, String label) => Column(children: [
     Text('$icon $val', style: const TextStyle(
       color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
       maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
     const SizedBox(height: 2),
     Text(label, style: const TextStyle(color: Colors.white38, fontSize: 11)),
-  ]));
+  ]);
 
   Widget _divider() => Container(width: 1, height: 32,
     margin: const EdgeInsets.symmetric(horizontal: 8), color: Colors.white12);

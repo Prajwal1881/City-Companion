@@ -1,4 +1,6 @@
+import 'package:curved_navigation_bar/curved_navigation_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import '../core/theme.dart';
 import '../services/push_notification_service.dart';
@@ -41,14 +43,32 @@ class _ShellScreenState extends State<ShellScreen> {
   Widget build(BuildContext context) {
     final idx = _currentIndex(context);
     return Scaffold(
+      backgroundColor: AppColors.bg,
       body: widget.child,
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: idx,
-        onTap: (i) => context.go(_tabs[i].path),
-        items: _tabs.map((t) => BottomNavigationBarItem(
-          icon: Icon(t.icon),
-          label: t.label,
-        )).toList(),
+      bottomNavigationBar: CurvedNavigationBar(
+        index: idx,
+        height: 64,
+        // Bar surface
+        color: AppColors.card,
+        // Floating active circle
+        buttonBackgroundColor: AppColors.orange,
+        // Shows through the notch — matches the page so it reads as a cutout
+        backgroundColor: AppColors.bg,
+        animationCurve: Curves.easeOutCubic,
+        animationDuration: const Duration(milliseconds: 350),
+        onTap: (i) {
+          HapticFeedback.selectionClick();
+          context.go(_tabs[i].path);
+        },
+        items: [
+          for (var i = 0; i < _tabs.length; i++)
+            Icon(
+              _tabs[i].icon,
+              size: 26,
+              // Active icon rides the orange circle (white); others are muted
+              color: i == idx ? Colors.white : AppColors.sub,
+            ),
+        ],
       ),
     );
   }

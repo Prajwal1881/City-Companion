@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pinput/pinput.dart';
 import '../../core/theme.dart';
 import '../../services/api_client.dart';
 import '../../services/push_notification_service.dart';
@@ -19,6 +20,7 @@ class _OtpScreenState extends State<OtpScreen> {
   final _ctrl = TextEditingController();
   bool _loading = false;
   bool _resending = false;
+  bool _verified = false;
   Timer? _timer;
   int _secondsLeft = 300;
 
@@ -80,24 +82,33 @@ class _OtpScreenState extends State<OtpScreen> {
   }
 
   void _verify() async {
-    if (_ctrl.text.length < 6) return;
+    if (_ctrl.text.length < 6 || _loading || _verified) return;
     setState(() => _loading = true);
     try {
       await ApiClient.verifyOtp(widget.phone, _ctrl.text);
       await PushNotificationService.registerForCurrentUser();
       final user = await ApiClient.getMe();
-      if (mounted) {
-        if (user['is_profile_complete'] == true) {
-          context.go('/feed');
-        } else {
-          context.go('/auth/setup');
-        }
+      if (!mounted) return;
+      // Show the success animation briefly before routing onward.
+      _timer?.cancel();
+      setState(() {
+        _verified = true;
+        _loading = false;
+      });
+      await Future.delayed(const Duration(milliseconds: 1400));
+      if (!mounted) return;
+      if (user['is_profile_complete'] == true) {
+        context.go('/feed');
+      } else {
+        context.go('/auth/setup');
       }
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Invalid OTP')));
-    } finally {
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+        _ctrl.clear();
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Invalid OTP')));
+      }
     }
   }
 
@@ -106,65 +117,146 @@ class _OtpScreenState extends State<OtpScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       appBar: AppBar(backgroundColor: AppColors.bg, elevation: 0),
-      body: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Enter OTP', style: Theme.of(context).textTheme.headlineLarge),
-          const SizedBox(height: 8),
-          Text('Sent to ${widget.phone}',
-              style: TextStyle(color: AppColors.sub)),
-          const SizedBox(height: 36),
-          TextField(
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 350),
+        child: _verified ? _buildSuccess() : _buildForm(),
+      ),
+    );
+  }
+
+  Widget _buildForm() {
+    final defaultPinTheme = PinTheme(
+      width: 50,
+      height: 56,
+      textStyle: const TextStyle(
+          fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.ink),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border, width: 1.5),
+      ),
+    );
+    final focusedPinTheme = defaultPinTheme.copyDecorationWith(
+      border: Border.all(color: AppColors.orange, width: 2),
+      borderRadius: BorderRadius.circular(14),
+    );
+    final submittedPinTheme = defaultPinTheme.copyWith(
+      decoration: defaultPinTheme.decoration!.copyWith(
+        color: AppColors.orange.withValues(alpha: 0.06),
+        border: Border.all(color: AppColors.orange, width: 1.5),
+      ),
+    );
+
+    return SingleChildScrollView(
+      key: const ValueKey('otp-form'),
+      padding: const EdgeInsets.all(28),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Verify your number',
+            style: Theme.of(context).textTheme.headlineLarge),
+        const SizedBox(height: 8),
+        Text('Enter the 6-digit code sent to ${widget.phone}',
+            style: const TextStyle(color: AppColors.sub)),
+        const SizedBox(height: 36),
+        Center(
+          child: Pinput(
+            length: 6,
             controller: _ctrl,
+            autofocus: true,
             keyboardType: TextInputType.number,
-            maxLength: 6,
-            style: const TextStyle(
-                fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: 12),
-            textAlign: TextAlign.center,
-            decoration:
-                const InputDecoration(counterText: '', hintText: '000000'),
+            defaultPinTheme: defaultPinTheme,
+            focusedPinTheme: focusedPinTheme,
+            submittedPinTheme: submittedPinTheme,
+            separatorBuilder: (_) => const SizedBox(width: 8),
+            onCompleted: (_) => _verify(),
+            showCursor: true,
           ),
-          const SizedBox(height: 20),
-          Center(
-            child: Column(children: [
-              if (_secondsLeft > 0)
-                Text(
-                  'OTP expires in $_timerText',
-                  style: TextStyle(
-                      color: _secondsLeft <= 60 ? Colors.red : AppColors.sub,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500),
-                ),
-              const SizedBox(height: 6),
-              _resending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2))
-                  : TextButton(
-                      onPressed: _secondsLeft == 0 ? _resend : null,
-                      child: Text(
-                        'Resend OTP',
-                        style: TextStyle(
-                          color: _secondsLeft == 0
-                              ? AppColors.orange
-                              : AppColors.sub,
-                          fontWeight: FontWeight.w600,
-                        ),
+        ),
+        const SizedBox(height: 24),
+        Center(
+          child: Column(children: [
+            if (_secondsLeft > 0)
+              Text(
+                'Code expires in $_timerText',
+                style: TextStyle(
+                    color: _secondsLeft <= 60 ? AppColors.rose : AppColors.sub,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500),
+              ),
+            const SizedBox(height: 6),
+            _resending
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : TextButton(
+                    onPressed: _secondsLeft == 0 ? _resend : null,
+                    child: Text(
+                      "Didn't receive the code? Resend",
+                      style: TextStyle(
+                        color:
+                            _secondsLeft == 0 ? AppColors.orange : AppColors.sub,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-            ]),
+                  ),
+          ]),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: (_loading || _secondsLeft == 0) ? null : _verify,
+            child: _loading
+                ? const SizedBox(
+                    height: 22,
+                    width: 22,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2))
+                : const Text('Verify'),
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: (_loading || _secondsLeft == 0) ? null : _verify,
-              child: _loading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('Verify'),
+        ),
+      ]),
+    );
+  }
+
+  Widget _buildSuccess() {
+    return Center(
+      key: const ValueKey('otp-success'),
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 650),
+            curve: Curves.elasticOut,
+            builder: (_, v, __) => Transform.scale(
+              scale: v,
+              child: Container(
+                width: 104,
+                height: 104,
+                decoration: BoxDecoration(
+                  color: AppColors.green.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.green, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                        color: AppColors.green.withValues(alpha: 0.25),
+                        blurRadius: 24,
+                        spreadRadius: 2),
+                  ],
+                ),
+                child: const Icon(Icons.check_rounded,
+                    color: AppColors.green, size: 56),
+              ),
             ),
           ),
+          const SizedBox(height: 28),
+          const Text('Verified successfully',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          const Text('Your phone number has been verified.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: AppColors.sub, fontSize: 14)),
         ]),
       ),
     );

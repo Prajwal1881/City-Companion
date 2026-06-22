@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme.dart';
@@ -125,7 +126,17 @@ class _RoomsScreenState extends State<RoomsScreen> {
                           onTap: () => context
                               .push('/rooms/detail', extra: _rooms[i])
                               .then((_) => _load()),
-                        ),
+                        )
+                            .animate()
+                            .fadeIn(
+                                duration: 350.ms,
+                                delay: (60 * (i.clamp(0, 8))).ms)
+                            .slideY(
+                                begin: 0.12,
+                                end: 0,
+                                duration: 350.ms,
+                                delay: (60 * (i.clamp(0, 8))).ms,
+                                curve: Curves.easeOutCubic),
                       ),
                     ),
         ),
