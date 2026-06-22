@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
@@ -17,6 +18,66 @@ class OtpScreen extends StatefulWidget {
 class _OtpScreenState extends State<OtpScreen> {
   final _ctrl = TextEditingController();
   bool _loading = false;
+  bool _resending = false;
+  Timer? _timer;
+  int _secondsLeft = 300;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    setState(() => _secondsLeft = 300);
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_secondsLeft > 0) {
+        setState(() => _secondsLeft--);
+      } else {
+        _timer?.cancel();
+      }
+    });
+  }
+
+  String get _timerText {
+    final m = _secondsLeft ~/ 60;
+    final s = _secondsLeft % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  void _resend() async {
+    setState(() => _resending = true);
+    try {
+      await ApiClient.sendOtp(widget.phone);
+      _startTimer();
+      _ctrl.clear();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('OTP resent successfully!'),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to resend OTP')));
+      }
+    } finally {
+      if (mounted) setState(() => _resending = false);
+    }
+  }
 
   void _verify() async {
     if (_ctrl.text.length < 6) return;
@@ -63,11 +124,42 @@ class _OtpScreenState extends State<OtpScreen> {
             decoration:
                 const InputDecoration(counterText: '', hintText: '000000'),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+          Center(
+            child: Column(children: [
+              if (_secondsLeft > 0)
+                Text(
+                  'OTP expires in $_timerText',
+                  style: TextStyle(
+                      color: _secondsLeft <= 60 ? Colors.red : AppColors.sub,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500),
+                ),
+              const SizedBox(height: 6),
+              _resending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : TextButton(
+                      onPressed: _secondsLeft == 0 ? _resend : null,
+                      child: Text(
+                        'Resend OTP',
+                        style: TextStyle(
+                          color: _secondsLeft == 0
+                              ? AppColors.orange
+                              : AppColors.sub,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+            ]),
+          ),
+          const SizedBox(height: 16),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _loading ? null : _verify,
+              onPressed: (_loading || _secondsLeft == 0) ? null : _verify,
               child: _loading
                   ? const CircularProgressIndicator(color: Colors.white)
                   : const Text('Verify'),

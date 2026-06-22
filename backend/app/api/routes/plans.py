@@ -14,7 +14,7 @@ from app.models.notification import Notification
 from app.models.other import Conversation, ConversationMember
 from app.models.user import User
 from app.core.security import get_current_user
-from app.core.google_places import GooglePlacesServiceError, autocomplete_locations
+from app.core.geocoding import LocationServiceError, autocomplete_locations
 from app.core.push_notifications import send_plan_cancelled_notification
 from datetime import datetime
 
@@ -58,7 +58,7 @@ async def location_autocomplete(
 
     try:
         return await autocomplete_locations(sanitized_query)
-    except GooglePlacesServiceError:
+    except LocationServiceError:
         raise HTTPException(
             status_code=503,
             detail="Location autocomplete is temporarily unavailable",

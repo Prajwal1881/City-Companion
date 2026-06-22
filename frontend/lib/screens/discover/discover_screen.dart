@@ -289,8 +289,11 @@ class _RadarMapTabState extends State<_RadarMapTab> {
 
   static String _catEmoji(String cat) {
     const m = {
-      'food': '🍔', 'play': '🎮', 'gym': '💪', 'ride': '🚗',
-      'hangout': '☕', 'trek': '🥾', 'party': '🎉', 'music': '🎵',
+      'food': '🍜', 'sports': '🏏', 'pub': '🍺', 'club': '🪩',
+      'theatre': '🎭', 'park': '🌿', 'gym': '💪', 'ride': '🏍️',
+      'hangout': '☕', 'trek': '🥾', 'music': '🎵', 'other': '📍',
+      // legacy keys
+      'play': '🏏', 'party': '🎉',
     };
     return m[cat.toLowerCase()] ?? '📍';
   }
@@ -1117,8 +1120,10 @@ class _PlanBottomCard extends StatelessWidget {
   const _PlanBottomCard({required this.plan, required this.onTap});
 
   static const _emoji = {
-    'food': '🍔', 'play': '🎮', 'gym': '💪', 'ride': '🚗',
-    'hangout': '☕', 'trek': '🥾', 'party': '🎉', 'music': '🎵',
+    'food': '🍜', 'sports': '🏏', 'pub': '🍺', 'club': '🪩',
+    'theatre': '🎭', 'park': '🌿', 'gym': '💪', 'ride': '🏍️',
+    'hangout': '☕', 'trek': '🥾', 'music': '🎵', 'other': '📍',
+    'play': '🏏', 'party': '🎉',
   };
 
   @override

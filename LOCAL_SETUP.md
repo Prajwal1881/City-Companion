@@ -81,7 +81,8 @@ The `--reload` flag enables hot reload on file changes.
 | `CLOUDINARY_CLOUD_NAME` | No | For cloud image uploads. Falls back to local filesystem |
 | `CLOUDINARY_API_KEY` | No | Cloudinary API key |
 | `CLOUDINARY_API_SECRET` | No | Cloudinary API secret |
-| `GOOGLE_PLACES_API_KEY` | No | For location autocomplete in plan creation |
+
+> Location autocomplete uses free OpenStreetMap providers (Photon + Nominatim) — no API key needed.
 
 ### Testing the backend
 

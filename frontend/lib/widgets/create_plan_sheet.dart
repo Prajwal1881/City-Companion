@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import '../core/theme.dart';
 import '../services/api_client.dart';
+import 'location_picker.dart';
 
 // ─── Create Plan Sheet ────────────────────────────────────────────────────────
 
@@ -35,53 +37,84 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
   bool _loading = false;
 
   static const _cats = [
-    {
-      'id': 'food',
-      'label': 'Food',
-      'emoji': '🍜',
-      'color': Color(0xFFFF4D00),
-      'bg': Color(0xFFFFF1EC)
-    },
-    {
-      'id': 'play',
-      'label': 'Play',
-      'emoji': '🏏',
-      'color': Color(0xFF0057FF),
-      'bg': Color(0xFFEEF3FF)
-    },
-    {
-      'id': 'gym',
-      'label': 'Gym',
-      'emoji': '💪',
-      'color': Color(0xFF00C851),
-      'bg': Color(0xFFEDFFF4)
-    },
-    {
-      'id': 'ride',
-      'label': 'Ride',
-      'emoji': '🏍️',
-      'color': Color(0xFFFFAB00),
-      'bg': Color(0xFFFFFBEF)
-    },
-    {
-      'id': 'hangout',
-      'label': 'Hangout',
-      'emoji': '☕',
-      'color': Color(0xFF7C3AED),
-      'bg': Color(0xFFF5F0FF)
-    },
-    {
-      'id': 'trek',
-      'label': 'Trek',
-      'emoji': '🥾',
-      'color': Color(0xFF00A896),
-      'bg': Color(0xFFEDFAF8)
-    },
+    {'id': 'food',    'label': 'Food',    'emoji': '🍜', 'color': Color(0xFFFF4D00), 'bg': Color(0xFFFFF1EC)},
+    {'id': 'sports',  'label': 'Sports',  'emoji': '🏏', 'color': Color(0xFF0057FF), 'bg': Color(0xFFEEF3FF)},
+    {'id': 'pub',     'label': 'Pub',     'emoji': '🍺', 'color': Color(0xFFFFAB00), 'bg': Color(0xFFFFFBEF)},
+    {'id': 'club',    'label': 'Club',    'emoji': '🪩', 'color': Color(0xFF7C3AED), 'bg': Color(0xFFF5F0FF)},
+    {'id': 'theatre', 'label': 'Theatre', 'emoji': '🎭', 'color': Color(0xFFE91E8C), 'bg': Color(0xFFFFF0F6)},
+    {'id': 'park',    'label': 'Park',    'emoji': '🌿', 'color': Color(0xFF00A896), 'bg': Color(0xFFEDFAF8)},
+    {'id': 'gym',     'label': 'Gym',     'emoji': '💪', 'color': Color(0xFF00C851), 'bg': Color(0xFFEDFFF4)},
+    {'id': 'ride',    'label': 'Ride',    'emoji': '🏍️', 'color': Color(0xFFFF6B00), 'bg': Color(0xFFFFF3EC)},
+    {'id': 'hangout', 'label': 'Hangout', 'emoji': '☕', 'color': Color(0xFF5C3317), 'bg': Color(0xFFF5EFE6)},
+    {'id': 'trek',    'label': 'Trek',    'emoji': '🥾', 'color': Color(0xFF2E7D32), 'bg': Color(0xFFEDF7ED)},
+    {'id': 'music',   'label': 'Music',   'emoji': '🎵', 'color': Color(0xFF6200EA), 'bg': Color(0xFFF3E8FF)},
+    {'id': 'other',   'label': 'Other',   'emoji': '📍', 'color': Color(0xFF607D8B), 'bg': Color(0xFFF0F4F8)},
   ];
 
+  Future<void> _geocodeFallback() async {
+    final query = _loc.text.trim();
+    if (query.isEmpty) return;
+    try {
+      final res = await Dio().get(
+        'https://nominatim.openstreetmap.org/search',
+        queryParameters: {'q': query, 'format': 'json', 'limit': 1},
+        options: Options(headers: {'User-Agent': 'CityCompanionApp/1.0'}),
+      );
+      final results = res.data as List<dynamic>;
+      if (results.isNotEmpty) {
+        _selectedLat = double.tryParse(results[0]['lat'].toString());
+        _selectedLng = double.tryParse(results[0]['lon'].toString());
+      }
+    } catch (_) {}
+  }
+
+  // Opens the map pin picker, seeding it with the best location we have so far.
+  Future<void> _openMapPicker() async {
+    ll.LatLng? start;
+    if (_selectedLat != null && _selectedLng != null) {
+      start = ll.LatLng(_selectedLat!, _selectedLng!);
+    } else if (_loc.text.trim().isNotEmpty) {
+      await _geocodeFallback();
+      if (_selectedLat != null && _selectedLng != null) {
+        start = ll.LatLng(_selectedLat!, _selectedLng!);
+      }
+    }
+    if (!mounted) return;
+    final picked = await showLocationPicker(
+      context,
+      initial: start,
+      initialQuery: _loc.text.trim(),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _selectedLat = picked.latitude;
+        _selectedLng = picked.longitude;
+        _locationSelected = true;
+        _locationSuggestions = [];
+      });
+    }
+  }
+
   void _submit() async {
-    if (_date == null || _time == null) return;
+    if (_date == null || _time == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Pick a date and time first')));
+      return;
+    }
     setState(() => _loading = true);
+    // If autocomplete didn't resolve coordinates, geocode the typed location
+    if (_selectedLat == null && _loc.text.trim().isNotEmpty) {
+      await _geocodeFallback();
+    }
+    // Exact coordinates are required so the plan can appear on others' maps.
+    if (_selectedLat == null || _selectedLng == null) {
+      if (mounted) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Set the plan location on the map first')));
+      }
+      return;
+    }
     final dt = DateTime(
         _date!.year, _date!.month, _date!.day, _time!.hour, _time!.minute);
     await widget.onCreated({
@@ -229,12 +262,12 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
                   children: [
                 if (_step == 0) ...[
                   GridView.count(
-                    crossAxisCount: 3,
+                    crossAxisCount: 4,
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     mainAxisSpacing: 10,
                     crossAxisSpacing: 10,
-                    childAspectRatio: 1.1,
+                    childAspectRatio: 1.0,
                     children: _cats
                         .map((c) => GestureDetector(
                               onTap: () =>
@@ -395,6 +428,50 @@ class _CreatePlanSheetState extends State<CreatePlanSheet> {
                             ),
                     ),
                   ],
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    onTap: _openMapPicker,
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: _selectedLat != null
+                            ? const Color(0xFFEDFFF4)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                            color: _selectedLat != null
+                                ? AppColors.green
+                                : AppColors.border,
+                            width: 1.5),
+                      ),
+                      child: Row(children: [
+                        Icon(
+                            _selectedLat != null
+                                ? Icons.check_circle_rounded
+                                : Icons.map_outlined,
+                            size: 20,
+                            color: _selectedLat != null
+                                ? AppColors.green
+                                : AppColors.orange),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            _selectedLat != null
+                                ? 'Location pinned — tap to adjust on map'
+                                : 'Set exact location on map',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: _selectedLat != null
+                                    ? AppColors.green
+                                    : AppColors.ink),
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right,
+                            size: 20, color: AppColors.sub),
+                      ]),
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   Row(children: [
                     Expanded(

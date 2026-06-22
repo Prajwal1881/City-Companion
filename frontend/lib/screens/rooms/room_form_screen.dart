@@ -1,13 +1,17 @@
+import 'dart:async';
 import 'dart:typed_data';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import '../../core/theme.dart';
 import '../../services/api_client.dart';
 import '../../widgets/city_field.dart';
+import '../../widgets/location_picker.dart';
 
 class RoomFormScreen extends StatefulWidget {
   final Map<String, dynamic>? room;
@@ -30,6 +34,12 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
   bool _smoking      = false;
   DateTime? _availableFrom;
   bool _loading      = false;
+  double? _latitude;
+  double? _longitude;
+
+  Timer? _areaDebounce;
+  bool _locationConfirmed = false;
+  bool _locationSearching = false;
 
   // Photos — existing (from backend) and newly picked
   List<Map<String, String>> _existingPhotos = []; // {id, url}
@@ -55,6 +65,9 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
       if (r['available_from'] != null) {
         _availableFrom = DateTime.tryParse(r['available_from'].toString());
       }
+      _latitude  = (r['latitude']  as num?)?.toDouble();
+      _longitude = (r['longitude'] as num?)?.toDouble();
+      if (_latitude != null && _longitude != null) _locationConfirmed = true;
       // Load existing photos
       final photos = r['photos'] as List<dynamic>? ?? [];
       _existingPhotos = photos.map((p) => {
@@ -66,6 +79,7 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
 
   @override
   void dispose() {
+    _areaDebounce?.cancel();
     _title.dispose(); _description.dispose(); _area.dispose();
     _city.dispose(); _rent.dispose();
     super.dispose();
@@ -98,6 +112,92 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
     }
   }
 
+  // Geocodes while typing — updates _latitude/_longitude and shows confirmation.
+  // Works for all Indian cities regardless of OSM suburb coverage.
+  Future<void> _geocodeAsYouType(String area) async {
+    if (area.trim().length < 3) {
+      if (mounted) setState(() {
+        _locationConfirmed = false;
+        _locationSearching = false;
+        _latitude  = null;
+        _longitude = null;
+      });
+      return;
+    }
+    if (mounted) setState(() { _locationSearching = true; _locationConfirmed = false; });
+    final city  = _city.text.trim();
+    final query = city.isNotEmpty ? '$area, $city, India' : '$area, India';
+    try {
+      final res = await Dio().get(
+        'https://nominatim.openstreetmap.org/search',
+        queryParameters: {'q': query, 'format': 'json', 'limit': 1},
+        options: Options(headers: {'User-Agent': 'CityCompanionApp/1.0'}),
+      );
+      final results = res.data as List<dynamic>;
+      if (!mounted) return;
+      if (results.isNotEmpty) {
+        _latitude  = double.tryParse(results[0]['lat'].toString());
+        _longitude = double.tryParse(results[0]['lon'].toString());
+        setState(() { _locationConfirmed = true; _locationSearching = false; });
+      } else {
+        setState(() { _locationConfirmed = false; _locationSearching = false;
+          _latitude = null; _longitude = null; });
+      }
+    } catch (_) {
+      if (mounted) setState(() { _locationConfirmed = false; _locationSearching = false; });
+    }
+  }
+
+  // Geocodes "Area, City, India" via Nominatim — sets _latitude/_longitude silently.
+  Future<void> _geocodeAddress() async {
+    final query = '${_area.text.trim()}, ${_city.text.trim()}, India';
+    try {
+      final dio = Dio();
+      final res = await dio.get(
+        'https://nominatim.openstreetmap.org/search',
+        queryParameters: {'q': query, 'format': 'json', 'limit': 1},
+        options: Options(headers: {'User-Agent': 'CityCompanionApp/1.0'}),
+      );
+      final results = res.data as List<dynamic>;
+      if (results.isNotEmpty) {
+        _latitude  = double.tryParse(results[0]['lat'].toString());
+        _longitude = double.tryParse(results[0]['lon'].toString());
+      }
+    } catch (_) {
+      // Geocoding is best-effort — proceed without coordinates if it fails
+    }
+  }
+
+  // Opens the map pin picker, seeding it with the best location we have so far.
+  Future<void> _openMapPicker() async {
+    ll.LatLng? start;
+    if (_latitude != null && _longitude != null) {
+      start = ll.LatLng(_latitude!, _longitude!);
+    } else if (_area.text.trim().length >= 3) {
+      await _geocodeAddress();
+      if (_latitude != null && _longitude != null) {
+        start = ll.LatLng(_latitude!, _longitude!);
+      }
+    }
+    if (!mounted) return;
+    final areaQuery = [_area.text.trim(), _city.text.trim()]
+        .where((s) => s.isNotEmpty)
+        .join(', ');
+    final picked = await showLocationPicker(
+      context,
+      initial: start,
+      initialQuery: areaQuery,
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        _latitude = picked.latitude;
+        _longitude = picked.longitude;
+        _locationConfirmed = true;
+        _locationSearching = false;
+      });
+    }
+  }
+
   Future<void> _submit() async {
     if (_title.text.trim().isEmpty || _area.text.trim().isEmpty ||
         _city.text.trim().isEmpty || _rent.text.trim().isEmpty) {
@@ -107,6 +207,17 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
     }
     setState(() => _loading = true);
     try {
+      // Use confirmed coordinates; fall back to Nominatim if user skipped autocomplete
+      if (!_locationConfirmed) await _geocodeAddress();
+
+      // Exact coordinates are required so the room appears on the Discover map.
+      if (_latitude == null || _longitude == null) {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Set the room location on the map first')));
+        return;
+      }
+
       final data = {
         'title':           _title.text.trim(),
         'description':     _description.text.trim().isEmpty ? null : _description.text.trim(),
@@ -118,6 +229,8 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
         'is_furnished':    _furnished,
         'smoking_allowed': _smoking,
         'available_from':  _availableFrom?.toIso8601String(),
+        'latitude':        _latitude,
+        'longitude':       _longitude,
       };
 
       Map<String, dynamic> result;
@@ -230,8 +343,89 @@ class _RoomFormScreenState extends State<RoomFormScreen> {
           _section('Location'),
           CityField(controller: _city, hint: 'City *'),
           const SizedBox(height: 12),
-          TextField(controller: _area,
-            decoration: const InputDecoration(hintText: 'Area / Locality *')),
+          TextField(
+            controller: _area,
+            decoration: InputDecoration(
+              hintText: 'Area / Locality *',
+              suffixIcon: _locationSearching
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.orange)))
+                  : _locationConfirmed
+                      ? const Icon(Icons.check_circle_rounded,
+                          color: Color(0xFF4CAF50), size: 20)
+                      : null,
+            ),
+            onChanged: (v) {
+              setState(() { _locationConfirmed = false; _locationSearching = false; });
+              _areaDebounce?.cancel();
+              _areaDebounce = Timer(const Duration(milliseconds: 700), () {
+                _geocodeAsYouType(v);
+              });
+            },
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              _locationConfirmed
+                  ? '✓ Location found — room will appear on Discover map'
+                  : _locationSearching
+                      ? 'Finding location...'
+                      : _latitude == null && _area.text.length >= 3
+                          ? '⚠ Location not found — try a different spelling'
+                          : 'ⓘ Type your area/locality name',
+              style: TextStyle(
+                fontSize: 11,
+                color: _locationConfirmed
+                    ? const Color(0xFF4CAF50)
+                    : _latitude == null && !_locationSearching && _area.text.length >= 3
+                        ? AppColors.rose
+                        : AppColors.muted,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: _openMapPicker,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: _locationConfirmed ? const Color(0xFFEDFFF4) : AppColors.card,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: _locationConfirmed ? const Color(0xFF4CAF50) : AppColors.border,
+                    width: 1.5),
+              ),
+              child: Row(children: [
+                Icon(
+                    _locationConfirmed
+                        ? Icons.check_circle_rounded
+                        : Icons.map_outlined,
+                    size: 20,
+                    color: _locationConfirmed
+                        ? const Color(0xFF4CAF50)
+                        : AppColors.orange),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _locationConfirmed
+                        ? 'Location pinned — tap to adjust on map'
+                        : 'Set exact location on map',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: _locationConfirmed
+                            ? const Color(0xFF4CAF50)
+                            : AppColors.ink),
+                  ),
+                ),
+                const Icon(Icons.chevron_right, size: 20, color: AppColors.sub),
+              ]),
+            ),
+          ),
           const SizedBox(height: 24),
 
           // ── Pricing ─────────────────────────────────────────────────────

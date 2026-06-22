@@ -132,6 +132,8 @@ class RoomCreate(BaseModel):
     is_furnished: bool = False
     smoking_allowed: bool = False
     available_from: Optional[datetime] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class RoomPhotoOut(BaseModel):
     id: str

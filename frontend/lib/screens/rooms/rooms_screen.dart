@@ -16,7 +16,7 @@ class _RoomsScreenState extends State<RoomsScreen> {
   String? _cityFilter;
   String? _typeFilter;
 
-  static const _filterCities = [
+  List<String> _filterCities = [
     'Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai',
     'Pune', 'Kolkata', 'Ahmedabad', 'Gurgaon', 'Noida',
   ];
@@ -27,6 +27,22 @@ class _RoomsScreenState extends State<RoomsScreen> {
   @override
   void initState() {
     super.initState();
+    _initWithUserCity();
+  }
+
+  Future<void> _initWithUserCity() async {
+    try {
+      final user = await ApiClient.getMe();
+      final city = (user['current_city'] as String?)?.trim();
+      if (city != null && city.isNotEmpty) {
+        final alreadyInList = _filterCities
+            .any((c) => c.toLowerCase() == city.toLowerCase());
+        setState(() {
+          _cityFilter = city;
+          if (!alreadyInList) _filterCities = [city, ..._filterCities];
+        });
+      }
+    } catch (_) {}
     _load();
   }
 
@@ -63,25 +79,14 @@ class _RoomsScreenState extends State<RoomsScreen> {
         ],
       ),
       body: Column(children: [
-        // ── City filter chips ──────────────────────────────────────────────
-        SizedBox(
-          height: 52,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            itemCount: _filterCities.length + 1,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (_, i) {
-              if (i == 0) {
-                return _chip('All Cities', _cityFilter == null,
-                    () => setState(() { _cityFilter = null; _load(); }));
-              }
-              final city = _filterCities[i - 1];
-              return _chip(city, _cityFilter == city,
-                  () => setState(() { _cityFilter = city; _load(); }));
-            },
+        // ── City filter chip — user's current city only ────────────────────
+        if (_cityFilter != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+            child: Row(children: [
+              _chip(_cityFilter!, true, () {}),
+            ]),
           ),
-        ),
 
         // ── Room type filter chips ─────────────────────────────────────────
         SizedBox(
