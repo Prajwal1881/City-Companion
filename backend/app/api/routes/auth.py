@@ -4,7 +4,6 @@ from app.db.database import get_db
 from app.schemas.schemas import OTPRequest, OTPVerify, TokenResponse, UserCreate, UserOut
 from app.models.user import User
 from app.core.security import create_access_token, get_current_user
-import random
 from app.core.config import settings
 
 router = APIRouter()
@@ -24,7 +23,7 @@ try:
 except Exception:
     r = None  # Redis unavailable — use hardcoded OTP fallback
 
-# Hardcoded OTP for testing (kept intentionally)
+# Hardcoded OTP for testing (no paid SMS gateway available)
 HARDCODED_OTP = "555555"
 
 
